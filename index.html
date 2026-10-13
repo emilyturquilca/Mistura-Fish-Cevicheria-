@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mistura Fish · Panel analítico</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#f3f8fa;--card:#fff;--ink:#0d2b3e;--mut:#5b7686;--line:#dbe8ee;--side:#0b2a40;--sea:#0e7c9b;--tq:#19b5b0;--warm:#f08a4b;--sand:#e8f4f6;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0a1b28;--card:#10293a;--ink:#e6f2f6;--mut:#8fb0bf;--line:#1d3d52;--sand:#14344a}}
+:root[data-theme=dark]{--bg:#0a1b28;--card:#10293a;--ink:#e6f2f6;--mut:#8fb0bf;--line:#1d3d52;--sand:#14344a}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "Trebuchet MS","Segoe UI",system-ui,sans-serif;display:flex;min-height:100vh}
+aside{width:210px;background:var(--side);color:#cfe6ee;padding:16px 10px;position:sticky;top:0;height:100vh;flex-shrink:0}
+.logo{font-weight:700;font-size:17px;color:#fff;padding:4px 10px 18px}.logo small{display:block;font-weight:400;color:var(--tq);font-size:11px}
+aside button{display:block;width:100%;text-align:left;background:none;border:0;color:inherit;padding:10px 12px;border-radius:8px;cursor:pointer;font:inherit;margin-bottom:2px}
+aside button:hover{background:#ffffff14}aside button.on{background:var(--sea);color:#fff}
+aside button:focus-visible,.pill:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--warm);outline-offset:1px}
+main{flex:1;min-width:0;padding:20px 24px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:0 0 10px}.sub{color:var(--mut);margin:0 0 16px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+.pill,select,input{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:20px;padding:6px 14px;font:inherit}
+.pill{cursor:pointer}.pill.on{background:var(--sea);border-color:var(--sea);color:#fff}
+.btn{background:var(--warm);color:#2a1300;border:0;border-radius:8px;padding:7px 14px;font-weight:600;cursor:pointer}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:14px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0}
+.k{color:var(--mut);font-size:12px}.v{font-size:22px;font-weight:700;margin-top:2px}.v.s{font-size:16px}
+.up{color:#119a6a;font-size:12px}.dn{color:#d2452f;font-size:12px}
+.wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:520px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}th{color:var(--mut);font-weight:600;font-size:12px}
+tr.c{cursor:pointer}tr.c:hover{background:var(--sand)}
+.na{color:var(--mut);font-style:italic}.tag{background:var(--sand);color:var(--sea);border-radius:10px;padding:2px 8px;font-size:12px}
+canvas{max-height:260px}.empty{padding:24px;text-align:center;color:var(--mut)}
+.steps{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.steps span{background:var(--sand);border-radius:16px;padding:4px 12px}.steps .on{background:var(--tq);color:#06302f;font-weight:700}
+.demo{background:#fff4e8;color:#7a3d0a;border-radius:8px;padding:6px 12px;margin-bottom:14px;font-size:12px}
+@media(max-width:760px){body{flex-direction:column}aside{width:100%;height:auto;position:static;display:flex;overflow-x:auto;gap:4px;padding:8px}.logo{display:none}aside button{width:auto;white-space:nowrap}main{padding:14px}}
+</style></head><body>
+<aside id="nav"><div class="logo">Mistura Fish<small>Panel analítico · Loyverse</small></div></aside>
+<main id="app"></main>
+<script>
+// ===== Datos reales (API de Loyverse vía /api/loyverse) =====
+const today=new Date();today.setHours(0,0,0,0);
+let PAY=[],CATS=[],PROD=[],CLI=[],VENTAS=[],MSG='';
+const K='mf_datos',CL='mf_clave';
+let DB=JSON.parse(localStorage.getItem(K)||'{"v":{},"prods":{},"sync":null}');
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function api(path,params){const u=new URL('/api/loyverse',location.origin);u.searchParams.set('path',path);
+ Object.entries(params||{}).forEach(([k,v])=>v&&u.searchParams.set(k,v));
+ const r=await fetch(u,{headers:{'x-clave':localStorage.getItem(CL)||''}});
+ if(r.status==401)throw new Error('AUTH');if(!r.ok)throw new Error('Error '+r.status);return r.json()}
+async function pages(path,key,p){let c,all=[];do{const d=await api(path,{...p,limit:250,cursor:c});all.push(...(d[key]||[]));c=d.cursor}while(c);return all}
+function hidratar(){
+ PROD=Object.keys(DB.prods).map((k,i)=>({id:i,key:k,...DB.prods[k]}));const ix={};PROD.forEach(p=>ix[p.key]=p.id);
+ VENTAS=Object.values(DB.v).map(v=>({id:v.id,f:new Date(v.f),cli:v.cli,pay:v.pay,total:v.total,items:v.items.filter(i=>ix[i.k]!==undefined).map(i=>({p:ix[i.k],q:i.q,t:i.t}))})).sort((a,b)=>a.f-b.f);
+ PAY=[...new Set(VENTAS.map(v=>v.pay))];CATS=[...new Set(PROD.map(p=>p.c))];CLI=[...new Set(VENTAS.map(v=>v.cli))]}
+async function sincronizar(forzar,desde){
+ if(!forzar&&!desde&&DB.sync&&Date.now()-new Date(DB.sync)<3e5)return;
+ MSG='Sincronizando…';render();
+ try{
+  const[cats,items,cus]=await Promise.all([pages('/categories','categories'),pages('/items','items'),pages('/customers','customers')]);
+  const cn={},cm={};cats.forEach(c=>cn[c.id]=c.name);cus.forEach(c=>cm[c.id]=c.name);
+  items.forEach(it=>{const v=(it.variants||[])[0]||{};DB.prods[it.id]={n:it.item_name,c:cn[it.category_id]||'Sin categoría',p:v.default_price??0,k:v.cost>0?v.cost:null}});
+  const since=desde||(DB.sync?new Date(new Date(DB.sync)-864e5).toISOString():new Date(Date.now()-30*864e5).toISOString());
+  let n=0;
+  (await pages('/receipts','receipts',{updated_at_min:since})).forEach(r=>{
+   if(r.receipt_type!=='SALE'||r.cancelled_at||DB.v[r.receipt_number])return;
+   DB.v[r.receipt_number]={id:r.receipt_number,f:r.receipt_date||r.created_at,cli:cm[r.customer_id]||'Consumidor final',pay:(r.payments||[]).map(p=>p.name).join(' + ')||'Sin dato',total:r.total_money,
+    items:(r.line_items||[]).map(l=>{const k=l.item_id||l.item_name;if(!DB.prods[k])DB.prods[k]={n:l.item_name,c:'Sin categoría',p:l.price||0,k:null};return{k,q:l.quantity,t:l.total_money}})};n++});
+  DB.sync=new Date().toISOString();
+  try{localStorage.setItem(K,JSON.stringify(DB))}catch{MSG='Aviso: el almacenamiento del navegador está lleno. Carga un historial más corto.'}
+  if(!MSG||MSG=='Sincronizando…')MSG=`Sincronizado: ${n} ventas nuevas.`;
+ }catch(e){if(e.message=='AUTH')return salir();MSG='No se pudo sincronizar ('+e.message+'). Mostrando datos guardados.'}
+ hidratar();render()}
+function login(){document.getElementById('app').innerHTML='<div class="card" style="max-width:320px;margin:60px auto"><h2>Mistura Fish</h2><p><input type="password" id="clv" placeholder="Contraseña" style="width:100%" onkeydown="if(event.key==\'Enter\')entrar()"></p><button class="btn" onclick="entrar()">Entrar</button><p class="na" id="lerr"></p></div>'}
+async function entrar(){localStorage.setItem(CL,document.getElementById('clv').value);
+ try{await api('/categories',{limit:1});arrancar()}catch(e){localStorage.removeItem(CL);document.getElementById('lerr').textContent=e.message=='AUTH'?'Contraseña incorrecta':'No se pudo conectar: '+e.message}}
+function salir(){localStorage.removeItem(CL);login()}
+function cargarHist(){const v=document.getElementById('hd').value;if(!v){MSG='Elige la fecha desde la cual cargar.';return render()}sincronizar(true,new Date(v).toISOString())}
+function arrancar(){hidratar();render();sincronizar(false)}
+// ===== Utilidades =====
+const S=x=>'S/ '+x.toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2});
+const D=d=>d.toLocaleDateString('es-PE',{day:'2-digit',month:'short'});
+const sum=a=>a.reduce((s,x)=>s+x,0);
+function range(k){const e=new Date(today);e.setHours(23,59,59);let s=new Date(today);
+ if(k=='hoy'){}else if(k=='semana'){s.setDate(s.getDate()-((s.getDay()+6)%7))}else if(k=='mes'){s.setDate(1)}
+ else if(k=='anterior'){s=new Date(today.getFullYear(),today.getMonth()-1,1);e.setTime(new Date(today.getFullYear(),today.getMonth(),0,23,59,59))}
+ else{s=new Date(P.from);e.setTime(new Date(P.to).getTime()+86399e3)}return[s,e]}
+function sel(k){const[s,e]=range(k);return VENTAS.filter(v=>v.f>=s&&v.f<=e)}
+function group(arr,keyFn,valFn){const m={};arr.forEach(x=>{const k=keyFn(x);m[k]=(m[k]||0)+valFn(x)});return m}
+function lines(vs){return vs.flatMap(v=>v.items.map(i=>({...i,pr:PROD[i.p],v})))}
+const P={k:'mes',from:new Date(today.getTime()-7*864e5).toISOString().slice(0,10),to:today.toISOString().slice(0,10)};
+let view='Dashboard',charts=[],q='',fp='',openId=null,step=0,lastImport=null;
+const MENU=['Dashboard','Ventas','Productos','Clientes','Rentabilidad','Reportes','Sincronizar Loyverse','Configuración'];
+function nav(){const n=document.getElementById('nav');n.querySelectorAll('button').forEach(b=>b.remove());
+ MENU.forEach(m=>{const b=document.createElement('button');b.textContent=m;b.className=m==view?'on':'';b.onclick=()=>{view=m;openId=null;render()};n.appendChild(b)})}
+function period(){const o=[['hoy','Hoy'],['semana','Esta semana'],['mes','Este mes'],['anterior','Mes anterior'],['custom','Personalizado']];
+ return `<div class="bar">${o.map(([k,l])=>`<button class="pill ${P.k==k?'on':''}" onclick="P.k='${k}';render()">${l}</button>`).join('')}
+ ${P.k=='custom'?`<input type="date" value="${P.from}" onchange="P.from=this.value;render()" aria-label="Desde"><input type="date" value="${P.to}" onchange="P.to=this.value;render()" aria-label="Hasta">`:''}</div>`}
+function chart(id,type,labels,data,label,extra={}){const c=document.getElementById(id);if(!c)return;
+ const cols=['#0e7c9b','#19b5b0','#f08a4b','#7fc8e0','#0b2a40','#9adbd6'];
+ charts.push(new Chart(c,{type,data:{labels,datasets:[{label,data,backgroundColor:type=='line'?'#19b5b033':cols,borderColor:'#0e7c9b',fill:type=='line',tension:.3,borderWidth:type=='line'?2:0}]},
+ options:{responsive:true,plugins:{legend:{display:['doughnut'].includes(type),position:'bottom'}},...extra}}))}
+const noData='<div class="empty">No hay ventas en este período. Cambia el rango de fechas o importa datos nuevos.</div>';
+// ===== Vistas =====
+const V={
+Dashboard(){const vs=sel(P.k),mes=sel('mes'),hoy=sel('hoy');
+ if(!vs.length)return period()+noData;
+ const L=lines(vs),byP=group(L,x=>x.pr.n,x=>x.q),byC=group(L,x=>x.pr.c,x=>x.t),byM=group(vs,v=>v.pay,v=>1);
+ const top=(o)=>Object.entries(o).sort((a,b)=>b[1]-a[1])[0][0];
+ const byD=group(vs,v=>D(v.f),v=>v.total);
+ setTimeout(()=>{chart('c1','line',Object.keys(byD),Object.values(byD),'Ventas S/');chart('c2','bar',Object.keys(byC),Object.values(byC),'S/');chart('c3','doughnut',Object.keys(byM),Object.values(byM),'Ventas');
+  const tp=Object.entries(byP).sort((a,b)=>b[1]-a[1]).slice(0,5);chart('c4','bar',tp.map(x=>x[0]),tp.map(x=>x[1]),'Unidades',{indexAxis:'y'})});
+ return `<h1>Dashboard</h1><p class="sub">Resumen del negocio con datos de Loyverse</p>${period()}
+ <div class="grid">${[['Ventas de hoy',S(sum(hoy.map(v=>v.total)))],['Ventas del mes',S(sum(mes.map(v=>v.total)))],['Cantidad de ventas (período)',vs.length],['Ticket promedio',S(sum(vs.map(v=>v.total))/vs.length)]].map(a=>`<div class="card"><div class="k">${a[0]}</div><div class="v">${a[1]}</div></div>`).join('')}
+ ${[['Producto más vendido',top(byP)],['Categoría líder',top(byC)],['Método más usado',top(byM)]].map(a=>`<div class="card"><div class="k">${a[0]}</div><div class="v s">${a[1]}</div></div>`).join('')}</div>
+ <div class="grid g2"><div class="card"><h2>Evolución de ventas por día</h2><canvas id="c1"></canvas></div><div class="card"><h2>Ventas por categoría</h2><canvas id="c2"></canvas></div>
+ <div class="card"><h2>Método de pago</h2><canvas id="c3"></canvas></div><div class="card"><h2>Productos más vendidos</h2><canvas id="c4"></canvas></div></div>`},
+Ventas(){let vs=sel(P.k).filter(v=>(v.id+v.cli).toLowerCase().includes(q.toLowerCase())&&(!fp||v.pay==fp)).reverse();
+ const det=openId&&VENTAS.find(v=>v.id==openId),tot=sum(vs.map(v=>v.total)),bm=group(vs,v=>v.pay,v=>v.total);
+ return `<h1>Ventas</h1><p class="sub">Historial importado desde Loyverse (solo consulta)</p>${period()}
+ <div class="bar"><input placeholder="Buscar venta o cliente" value="${q}" oninput="q=this.value;render(true)"><select onchange="fp=this.value;render()"><option value="">Todos los métodos</option>${PAY.map(p=>`<option ${fp==p?'selected':''}>${p}</option>`).join('')}</select></div>
+ ${det?`<div class="card" style="margin-bottom:14px"><h2>Detalle #${det.id} <button class="pill" onclick="openId=null;render()">Cerrar</button></h2><div class="k">${det.f.toLocaleString('es-PE')} · ${esc(det.cli)} · ${esc(det.pay)}</div>${det.items.map(i=>`<div>${i.q}× ${esc(PROD[i.p].n)} — ${S(i.t)}</div>`).join('')}<b>Total ${S(det.total)}</b></div>`:''}
+ <div class="grid"><div class="card"><div class="k">Total vendido (filtro actual)</div><div class="v">${S(tot)}</div><div class="k">${vs.length} ventas</div></div>${PAY.map(p=>`<div class="card"><div class="k">Total en ${p}</div><div class="v s">${S(bm[p]||0)}</div></div>`).join('')}</div>
+ <div class="card wrap">${vs.length?`<table><tr><th>Fecha</th><th>N° venta</th><th>Cliente</th><th>Total</th><th>Método</th><th>Productos</th></tr>${vs.slice(0,50).map(v=>`<tr class="c" onclick="openId='${v.id}';render()"><td>${D(v.f)}</td><td>#${v.id}</td><td>${esc(v.cli)}</td><td>${S(v.total)}</td><td><span class="tag">${esc(v.pay)}</span></td><td>${sum(v.items.map(i=>i.q))}</td></tr>`).join('')}<tr><td colspan="3"><b>Total de las ${vs.length} ventas filtradas</b></td><td><b>${S(tot)}</b></td><td colspan="2"></td></tr></table><div class="k" style="padding-top:8px">Mostrando ${Math.min(50,vs.length)} de ${vs.length}</div>`:noData}</div>`},
+Productos(){const L=lines(VENTAS),rows=PROD.map(p=>{const l=L.filter(x=>x.p==p.id);return{...p,q:sum(l.map(x=>x.q)),r:sum(l.map(x=>x.t))}});
+ let r=rows.filter(x=>!fp||x.c==fp);const o=window.ord||'q-';const[kk,d]=[o[0],o[1]];r.sort((a,b)=>d=='-'?b[kk]-a[kk]:a[kk]-b[kk]);
+ return `<h1>Productos</h1><p class="sub">Catálogo y desempeño (todo el historial importado)</p><div class="bar"><select onchange="fp=this.value;render()"><option value="">Todas las categorías</option>${CATS.map(c=>`<option ${fp==c?'selected':''}>${c}</option>`).join('')}</select>
+ <select onchange="window.ord=this.value;render()">${[['q-','Mayor cantidad vendida'],['q+','Menor cantidad vendida'],['r-','Mayor ingreso'],['r+','Menor ingreso']].map(a=>`<option value="${a[0]}" ${o==a[0]?'selected':''}>${a[1]}</option>`).join('')}</select></div>
+ <div class="card wrap"><table><tr><th>Nombre</th><th>Categoría</th><th>Precio</th><th>Coste</th><th>Margen</th><th>Vendidos</th><th>Ingresos</th></tr>${r.map(x=>`<tr><td>${esc(x.n)}</td><td>${esc(x.c)}</td><td>${S(x.p)}</td><td>${x.k==null?'<span class="na">Información no disponible</span>':S(x.k)}</td><td>${x.k==null?'<span class="na">Información no disponible</span>':S(x.p-x.k)}</td><td>${x.q}</td><td>${S(x.r)}</td></tr>`).join('')}</table></div>`},
+Clientes(){const m={};VENTAS.forEach(v=>{if(v.cli=='Consumidor final')return;const c=m[v.cli]||(m[v.cli]={n:v.cli,c:0,t:0,u:v.f,p:v.f});c.c++;c.t+=v.total;if(v.f>c.u)c.u=v.f;if(v.f<c.p)c.p=v.f});
+ const a=Object.values(m).sort((x,y)=>y.c-x.c),lim=new Date(today.getTime()-30*864e5);
+ return `<h1>Clientes</h1><p class="sub">Comportamiento de los clientes registrados</p><div class="grid">${[['Total de clientes',a.length],['Clientes nuevos (30 días)',a.filter(c=>c.p>=lim).length],['Frecuentes (10+ compras)',a.filter(c=>c.c>=10).length]].map(x=>`<div class="card"><div class="k">${x[0]}</div><div class="v">${x[1]}</div></div>`).join('')}</div>
+ <div class="card wrap"><h2>Ranking de clientes frecuentes</h2><table><tr><th>#</th><th>Nombre</th><th>Compras</th><th>Total gastado</th><th>Última compra</th></tr>${a.map((c,i)=>`<tr><td>${i+1}</td><td>${esc(c.n)}</td><td>${c.c}</td><td>${S(c.t)}</td><td>${D(c.u)}</td></tr>`).join('')}</table></div>`},
+Rentabilidad(){const r=PROD.filter(p=>p.k!=null).map(p=>({...p,m:p.p-p.k,pc:(p.p-p.k)/p.p*100})).sort((a,b)=>b.pc-a.pc),sin=PROD.filter(p=>p.k==null);
+ setTimeout(()=>chart('c1','bar',r.map(x=>x.n),r.map(x=>+x.pc.toFixed(1)),'Margen %',{indexAxis:'y'}));
+ return `<h1>Rentabilidad</h1><p class="sub">Margen = Precio − Coste · Margen % = (Precio − Coste) / Precio × 100. Módulo complementario: no modifica los demás reportes.</p>
+ <div class="grid g2"><div class="card"><h2>Margen % por producto (mayor a menor)</h2><canvas id="c1"></canvas></div><div class="card wrap"><table><tr><th>Producto</th><th>Precio</th><th>Coste</th><th>Margen S/</th><th>Margen %</th></tr>${r.map(x=>`<tr><td>${esc(x.n)}</td><td>${S(x.p)}</td><td>${S(x.k)}</td><td>${S(x.m)}</td><td>${x.pc.toFixed(1)}%</td></tr>`).join('')}${sin.map(x=>`<tr><td>${esc(x.n)}</td><td>${S(x.p)}</td><td colspan="3" class="na">Sin información de coste</td></tr>`).join('')}</table></div></div>`},
+Reportes(){const vs=sel(P.k);if(!vs.length)return '<h1>Reportes</h1>'+period()+noData;const m=group(vs,v=>v.pay,v=>1),t=vs.length,mt=group(vs,v=>v.pay,v=>v.total),dn=group(vs,v=>v.f.toISOString().slice(0,10),v=>1),dt=group(vs,v=>v.f.toISOString().slice(0,10),v=>v.total),tt=sum(vs.map(v=>v.total));
+ const[s,e]=range(P.k),len=e-s,prev=VENTAS.filter(v=>v.f>=new Date(s-len-1)&&v.f<s),a=sum(vs.map(v=>v.total)),b=sum(prev.map(v=>v.total));
+ return `<h1>Reportes</h1><p class="sub">Todos los reportes usan el rango de fechas elegido</p>${period()}<div class="bar"><button class="btn" onclick="exportCSV()">Exportar Excel (CSV)</button><button class="btn" onclick="window.print()">Exportar PDF</button></div>
+ <div class="grid g2"><div class="card"><h2>Comparación de períodos</h2><div class="k">Período actual</div><div class="v">${S(a)}</div><div class="k">Período anterior equivalente</div><div class="v">${b?S(b):'<span class="na">Sin datos previos</span>'}</div>${b?`<div class="${a>=b?'up':'dn'}">${a>=b?'▲':'▼'} ${((a-b)/b*100).toFixed(1)}%</div>`:''}</div>
+ <div class="card wrap"><h2>Métodos de pago</h2><table><tr><th>Método</th><th>Cantidad</th><th>%</th><th>Monto</th></tr>${PAY.map(p=>`<tr><td>${p}</td><td>${m[p]||0}</td><td>${((m[p]||0)/t*100).toFixed(1)}%</td><td>${S(mt[p]||0)}</td></tr>`).join('')}<tr><td><b>Total</b></td><td><b>${t}</b></td><td><b>100%</b></td><td><b>${S(tt)}</b></td></tr></table></div>
+ <div class="card wrap"><h2>Resumen contable por día</h2><table><tr><th>Fecha</th><th>Ventas</th><th>Total del día</th></tr>${Object.keys(dt).sort().map(k=>`<tr><td>${D(new Date(k+'T12:00'))}</td><td>${dn[k]}</td><td>${S(dt[k])}</td></tr>`).join('')}<tr><td><b>Suma total</b></td><td><b>${t}</b></td><td><b>${S(tt)}</b></td></tr></table></div></div>`},
+'Sincronizar Loyverse'(){return `<h1>Sincronizar Loyverse</h1><p class="sub">Los datos se leen de la API de Loyverse mediante un servidor seguro: el token nunca llega al navegador.</p>
+ <div class="card"><p>Última sincronización: <b>${DB.sync?new Date(DB.sync).toLocaleString('es-PE'):'nunca'}</b> · Ventas guardadas: <b>${VENTAS.length}</b></p>
+ <div class="bar"><button class="btn" onclick="sincronizar(true)">Sincronizar ahora</button><label>Cargar historial desde <input type="date" id="hd"></label><button class="pill" onclick="cargarHist()">Cargar historial</button></div>
+ <p class="k">Se ignoran recibos anulados y reembolsos. Las ventas ya guardadas no se duplican. Un coste en 0 o vacío se muestra como "Información no disponible".</p>
+ <button class="pill" onclick="salir()">Cerrar sesión</button></div>`},
+Configuración(){return `<h1>Configuración</h1><p class="sub">Empresa, categorías, métodos de pago y perfiles</p><div class="grid g2"><div class="card"><h2>Empresa</h2><p><input value="Mistura Fish" aria-label="Nombre"></p><p><input type="file" accept="image/*" aria-label="Logo"></p></div>
+ <div class="card"><h2>Categorías</h2>${CATS.map(c=>`<span class="tag">${c}</span> `).join('')}<h2 style="margin-top:12px">Métodos de pago</h2>${PAY.map(c=>`<span class="tag">${c}</span> `).join('')}</div>
+ <div class="card"><h2>Perfiles</h2><p>Dueño: acceso total · Administrador: reportes, importación y configuración básica. El vendedor no usa este sistema.</p></div></div>`}};
+function exportCSV(){const vs=sel(P.k);const csv='N°,Fecha,Cliente,Método,Total\n'+vs.map(v=>[v.id,v.f.toISOString(),v.cli,v.pay,v.total.toFixed(2)].join(',')).join('\n')+'\nTOTAL,,,,'+sum(vs.map(v=>v.total)).toFixed(2);
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='reporte-ventas.csv';a.click()}
+function render(keep){charts.forEach(c=>c.destroy());charts=[];nav();const f=document.activeElement;const pos=f&&f.selectionStart;
+ document.getElementById('app').innerHTML='<div class="demo">'+esc(MSG||(DB.sync?'Última sincronización: '+new Date(DB.sync).toLocaleString('es-PE'):'Sin sincronizar'))+'</div>'+V[view]();
+ if(keep){const i=document.querySelector('input[placeholder]');if(i){i.focus();i.setSelectionRange(pos,pos)}}}
+localStorage.getItem(CL)?arrancar():login();
+</script></body></html>
