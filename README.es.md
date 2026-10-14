@@ -29,7 +29,7 @@ El panel se protege con una contraseña (`APP_PASSWORD`). La contraseña se vali
 
 ## Publicar (GitHub + Vercel)
 1. Crea un repositorio **privado** en GitHub y sube estos archivos.
-2. En Vercel: *Add New > Project*, importa el repositorio, framework **Other** y *Deploy*.
+2. En Vercel: *Add New > Project*, importa el repositorio, framework **Other** y *Deploy*. Si el proyecto está dentro de una subcarpeta, en **Root Directory** elige la carpeta que contiene `index.html`, `package.json` y `api/loyverse.js`.
 3. En *Project > Settings > Environment Variables* agrega `APP_PASSWORD` (abajo) y vuelve a desplegar.
 4. Abre la dirección de Vercel y entra con la contraseña. En **Sincronizar Loyverse**, pega el token de Loyverse (API) y presiona **Guardar y sincronizar**, o sube un archivo CSV/Excel exportado.
 
@@ -54,6 +54,7 @@ El panel se protege con una contraseña (`APP_PASSWORD`). La contraseña se vali
 | Síntoma | Causa probable |
 |---|---|
 | "Contraseña incorrecta" | Falta `APP_PASSWORD` o no se volvió a desplegar tras agregarla |
+| "No se pudo conectar: Error 404" | Vercel no publicó `/api/loyverse`; revisa el **Root Directory**, confirma que `api/loyverse.js` esté en la raíz desplegada y vuelve a desplegar |
 | "Falta el token de Loyverse" | No hay token guardado en el panel ni variable `LOYVERSE_TOKEN` |
 | "Loyverse rechazó el token" | Token inválido o vencido, o el plan no permite la API |
 | "No reconocí las columnas" | El archivo necesita columnas de N.º de recibo, fecha y total; envía los encabezados reales para ajustar |
