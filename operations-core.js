@@ -122,5 +122,11 @@
     s.commands.push({ id, type: command.type, at: now });
     return { state: s, duplicate: false };
   }
-  globalThis.MisturaOperations = { initial, apply, stock, recipeCost, unitQuantity, round };
+  function combineSales(shared, local, now = Date.now()) {
+    const olderThan = new Date(now).getTime() - 30 * 864e5;
+    const retained = Object.fromEntries(Object.entries(local?.v || {}).filter(([id, r]) =>
+      !Object.hasOwn(shared.cancelledIds || {}, id) && (r.source === 'file' || new Date(r.f).getTime() < olderThan)));
+    return { ...structuredClone(shared), prods: { ...(local?.prods || {}), ...shared.prods }, v: { ...retained, ...shared.v } };
+  }
+  globalThis.MisturaOperations = { initial, apply, stock, recipeCost, unitQuantity, round, combineSales };
 })();

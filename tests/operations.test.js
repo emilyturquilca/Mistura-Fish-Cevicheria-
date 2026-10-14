@@ -113,3 +113,16 @@ test('Shared API checks authentication before touching the database and reports 
     if (originalURL == null) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = originalURL;
   }
 });
+test('Shared refresh preserves manual imports and old local archives, but never resurrects cancelled receipts', () => {
+  const local = { prods: { old: { n: 'Producto anterior' } }, v: {
+    file: { source: 'file', f: now, total: 20 }, archive: { source: 'api', f: '2025-01-01T12:00:00Z', total: 30 },
+    staleRecent: { source: 'api', f: now, total: 40 }, cancelled: { source: 'api', f: '2025-01-01T12:00:00Z', total: 50 },
+    updated: { source: 'api', f: now, total: 60 }
+  } };
+  const shared = { prods: { fresh: { n: 'Producto nuevo' } }, v: { updated: { source: 'api', f: now, total: 70 } }, cancelledIds: { cancelled: now }, sync: now };
+  const combined = O.combineSales(shared, local, now);
+  assert.equal(combined.v.file.total, 20); assert.equal(combined.v.archive.total, 30); assert.equal(combined.v.updated.total, 70);
+  assert.equal(combined.v.cancelled, undefined); assert.equal(combined.v.staleRecent, undefined);
+  assert.equal(combined.prods.old.n, 'Producto anterior'); assert.equal(combined.prods.fresh.n, 'Producto nuevo');
+  assert.equal(local.v.updated.total, 60);
+});

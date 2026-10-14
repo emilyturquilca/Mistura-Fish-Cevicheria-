@@ -22,7 +22,7 @@ La tabla mistura_operations contiene un documento JSONB versionado con proveedor
 
 Esta estructura corresponde a un negocio pequeño y una primera versión. Antes de sumar múltiples locales, años de historial o permisos por usuario, conviene separar entidades y recibos en tablas e incorporar migraciones. No hay inventario por lote ni reservas; lote/vencimiento sirven para trazabilidad del movimiento, no para FIFO/FEFO. Las fechas describen el documento; la valoración se aplica en el orden de registro, sin recalcular costos retrospectivos.
 
-Los datos antiguos del navegador se conservan hasta que haya una sincronización compartida. Los archivos manuales siguen siendo locales y no se agregan a la base. El historial API conserva recibos anteriores guardados; la sincronización ordinaria consulta los últimos 30 días. Las anulaciones consultadas se retiran y las devoluciones se restan. Cambios fuera de esa ventana requieren revisar el historial.
+Los archivos manuales y archivos históricos anteriores a la ventana de sincronización se conservan en ese navegador; no se migran automáticamente a PostgreSQL. Los archivos manuales siguen siendo locales y no se agregan a la base. El historial API conserva recibos anteriores guardados; la sincronización ordinaria consulta los últimos 30 días. Las anulaciones consultadas se retiran y las devoluciones se restan. Cambios fuera de esa ventana requieren revisar el historial.
 
 ## Instalación y despliegue
 

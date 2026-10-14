@@ -26,7 +26,7 @@ async function opRequest(path, body) {
 }
 function opAdopt(data) {
   OPS = { ...OPS, state: data.state, version: data.version, configured: true, error: '' };
-  if (data.state.sales.sync) { DB = structuredClone(data.state.sales); guardar(); hidratar(); }
+  if (data.state.sales.sync) { DB = OpsCore.combineSales(data.state.sales,DB); guardar(); hidratar(); }
 }
 async function opLoad(quiet = false) {
   if (OPS.busy) return;
