@@ -110,7 +110,7 @@
     return result;
   }
   function reportRows(receipts) {
-    const rows = [['N° recibo', 'Fecha y hora (Lima)', 'Tipo', 'Cliente', 'Método', 'Ventas brutas', 'Descuentos', 'Ventas netas', 'Impuestos añadidos', 'Propinas', 'Recargos', 'Total cobrado', 'Costo de productos', 'Beneficio bruto']];
+    const rows = [['N° recibo', 'Fecha y hora', 'Tipo', 'Cliente', 'Método', 'Ventas brutas', 'Descuentos', 'Ventas netas', 'Impuestos añadidos', 'Propinas', 'Recargos', 'Total cobrado', 'Costo de productos', 'Beneficio bruto']];
     for (const r of receipts) {
       const net = r.net ?? null, cost = r.cost ?? null;
       rows.push([String(r.id), new Intl.DateTimeFormat('es-PE', { timeZone: TIME_ZONE, dateStyle: 'short', timeStyle: 'medium' }).format(new Date(r.f)), r.type === 'REFUND' ? 'Devolución' : 'Venta', r.cli, r.pay,

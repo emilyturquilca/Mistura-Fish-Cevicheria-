@@ -175,19 +175,21 @@ test('Excel export creates a readable workbook with numeric totals and matching 
   assert.equal(context.result[2][13], 60);
 });
 
-test('full sync migrates older saved receipts, replaces amounts and applies cancellations', async () => {
+test('full sync refreshes receipts with a bounded creation window and applies cancellations', async () => {
   const context = app();
   vm.runInContext(`DB={v:{old:{id:'old',f:'2025-10-12T05:00:00Z',total:120,items:[]},cancel:{id:'cancel',f:'2026-10-12T05:00:00Z',total:70,items:[]}},prods:{},sync:'2026-10-14T00:00:00Z'};globalThis.requests=[];pages=async(path,key,p)=>{requests.push({path,p});return path=='/receipts'?[${JSON.stringify(receipt('old', { total_money: 100 }))},${JSON.stringify(receipt('cancel', { cancelled_at: '2026-10-14T12:00:00Z' }))}]:[]};`, context);
   await vm.runInContext('sincronizar(true)', context);
   assert.equal(vm.runInContext('DB.v.old.total', context), 100);
   assert.equal(vm.runInContext("Object.hasOwn(DB.v,'cancel')", context), false);
-  assert.equal(vm.runInContext('DB.apiVersion', context), 2);
-  assert.equal(context.requests.find(r => r.path === '/receipts').p.updated_at_min, '2025-10-12T05:00:00.000Z');
+  assert.equal(vm.runInContext('DB.apiVersion', context), 3);
+  const query = context.requests.find(r => r.path === '/receipts').p;
+  assert.equal(query.updated_at_min, query.created_at_min);
+  assert.ok(new Date(query.created_at_min).getTime() >= Date.now() - 30 * 864e5 - 5000);
 });
 
 test('failed sync leaves receipt data and incremental cursor intact', async () => {
   const context = app();
-  vm.runInContext("DB={v:{},prods:{},apiVersion:2,apiSync:'2026-10-12T00:00:00Z'};pages=async(path)=>{if(path=='/receipts')throw new Error('Network failure');return []};", context);
+  vm.runInContext("DB={v:{},prods:{},apiVersion:3,apiSync:'2026-10-12T00:00:00Z'};pages=async(path)=>{if(path=='/receipts')throw new Error('Network failure');return []};", context);
   await vm.runInContext('sincronizar(true)', context);
   assert.equal(vm.runInContext('DB.apiSync', context), '2026-10-12T00:00:00Z');
   assert.equal(vm.runInContext('Object.keys(DB.v).length', context), 0);
@@ -197,7 +199,7 @@ test('failed sync leaves receipt data and incremental cursor intact', async () =
 
 test('history loads and file imports never advance the API sync cursor', async () => {
   const context = app();
-  vm.runInContext("DB={v:{},prods:{},apiVersion:2,apiSync:'2026-10-12T00:00:00Z'};pages=async()=>[];", context);
+  vm.runInContext("DB={v:{},prods:{},apiVersion:3,apiSync:'2026-10-12T00:00:00Z'};pages=async()=>[];", context);
   await vm.runInContext("sincronizar(true,'2026-10-13T05:00:00Z')", context);
   assert.equal(vm.runInContext('DB.apiSync', context), '2026-10-12T00:00:00Z');
   vm.runInContext("importar('Receipt number,Date,Total,Receipt type\\nF1,12/10/2026 14:00,20,REFUND')", context);
@@ -213,4 +215,13 @@ test('sync module shows server configuration without asking each device to save 
   assert.match(html, /Loyverse configurado para todos tus dispositivos/);
   assert.ok(!html.includes('id="tk"'));
   assert.ok(!html.includes('Guardar y sincronizar'));
+});
+
+test('old stored archives do not cause a recent sync to request history outside the available plan', async () => {
+  const context = app();
+  vm.runInContext("DB={v:{archive:{id:'archive',f:'2025-01-01T12:00:00Z',total:50,items:[]}},prods:{},apiVersion:2,apiSync:new Date().toISOString()};pages=async(path,key,p)=>{if(path=='/receipts'&&(!p.created_at_min||new Date(p.created_at_min).getTime()<Date.now()-31*864e5))throw new Error('PAYMENT_REQUIRED');return []};", context);
+  await vm.runInContext('sincronizar(false)', context);
+  assert.equal(vm.runInContext('DB.apiVersion', context), 3);
+  assert.equal(vm.runInContext('DB.v.archive.total', context), 50);
+  assert.ok(!vm.runInContext('MSG', context).includes('PAYMENT_REQUIRED'));
 });

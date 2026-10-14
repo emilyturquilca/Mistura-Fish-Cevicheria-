@@ -46,6 +46,10 @@ export async function GET(request) {
       return json({ error: 'Loyverse rechazó el token. Revísalo.' }, 502);
     }
 
+    if (respuesta.status === 402) {
+      return json({ error: 'Loyverse limita el historial disponible a los últimos 31 días. Elige una fecha más reciente para cargarlo.' }, 402);
+    }
+
     return new Response(await respuesta.text(), {
       status: respuesta.status,
       headers: {

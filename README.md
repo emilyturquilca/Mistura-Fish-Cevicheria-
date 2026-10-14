@@ -47,7 +47,8 @@ The panel is protected by a password (`APP_PASSWORD`). The password is validated
 - Receipts are upserted by receipt number, cancelled receipts are removed and refunds use negative amounts on their own dates.
 - Net sales = gross sales − refunds before discounts − net discounts. Included taxes remain in sales; added taxes, tips and surcharges belong to collected payments, not net sales.
 - Gross profit = net sales − historical receipt line costs (`cost_total`). Missing costs produce "Información no disponible"; operating expenses are not included.
-- The first sync after upgrading reloads from the earliest stored receipt (at least 30 days). File imports never advance the API sync cursor. Old/file receipts without a full breakdown remain provisional until reconciled with the API.
+- Automatic sync explicitly limits receipt creation dates to the latest 30 days, preserving older cached history without requesting records outside Loyverse's available history plan. Manual history loads retain the chosen start date and explain plan restrictions. File imports never advance the API cursor. Old/file receipts without a full breakdown remain provisional until reconciled with the API.
+- Use the permanent project URL for updates; immutable deployment URLs keep their original build.
 - A cost of 0 or empty is shown as "Información no disponible" (Loyverse does not distinguish "no cost" from "cost 0"). Nothing is estimated.
 - Browser storage is about 5 MB: enough for several months of sales, not years. The panel warns when it is full.
 - The password is kept only for the current browser session. After signing out or starting a new session, it must be entered again.

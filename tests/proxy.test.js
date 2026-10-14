@@ -41,3 +41,19 @@ test('server token takes priority over an older device token; device-only fallba
     if (token === undefined) delete process.env.LOYVERSE_TOKEN; else process.env.LOYVERSE_TOKEN = token;
   }
 });
+
+test('history plan restrictions return a useful error without exposing the provider response', async () => {
+  const password = process.env.APP_PASSWORD, token = process.env.LOYVERSE_TOKEN, fetch = globalThis.fetch;
+  try {
+    process.env.APP_PASSWORD = 'test-password';
+    process.env.LOYVERSE_TOKEN = 'test-server-token';
+    globalThis.fetch = async () => Response.json({ errors: [{ code: 'PAYMENT_REQUIRED' }] }, { status: 402 });
+    const response = await GET(new Request('https://example.test/api/loyverse?path=/receipts', { headers: { 'x-clave': 'test-password' } }));
+    assert.equal(response.status, 402);
+    assert.match((await response.json()).error, /últimos 31 días/);
+  } finally {
+    globalThis.fetch = fetch;
+    if (password === undefined) delete process.env.APP_PASSWORD; else process.env.APP_PASSWORD = password;
+    if (token === undefined) delete process.env.LOYVERSE_TOKEN; else process.env.LOYVERSE_TOKEN = token;
+  }
+});
