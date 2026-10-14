@@ -3,6 +3,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mistura Fish · Panel analítico</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{--bg:#f3f8fa;--card:#fff;--ink:#0d2b3e;--mut:#5b7686;--line:#dbe8ee;--side:#0b2a40;--sea:#0e7c9b;--tq:#19b5b0;--warm:#f08a4b;--sand:#e8f4f6;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0a1b28;--card:#10293a;--ink:#e6f2f6;--mut:#8fb0bf;--line:#1d3d52;--sand:#14344a}}
@@ -40,13 +41,15 @@ canvas{max-height:260px}.empty{padding:24px;text-align:center;color:var(--mut)}
 // ===== Datos reales (API de Loyverse vía /api/loyverse) =====
 const today=new Date();today.setHours(0,0,0,0);
 let PAY=[],CATS=[],PROD=[],CLI=[],VENTAS=[],MSG='';
-const K='mf_datos',CL='mf_clave';
+const K='mf_datos',CL='mf_clave',TK='mf_token';
 let DB=JSON.parse(localStorage.getItem(K)||'{"v":{},"prods":{},"sync":null}');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(path,params){const u=new URL('/api/loyverse',location.origin);u.searchParams.set('path',path);
  Object.entries(params||{}).forEach(([k,v])=>v&&u.searchParams.set(k,v));
- const r=await fetch(u,{headers:{'x-clave':localStorage.getItem(CL)||''}});
- if(r.status==401)throw new Error('AUTH');if(!r.ok)throw new Error('Error '+r.status);return r.json()}
+ const h={'x-clave':encodeURIComponent(localStorage.getItem(CL)||'')},t=localStorage.getItem(TK);if(t)h['x-token']=encodeURIComponent(t);
+ const r=await fetch(u,{headers:h});
+ if(r.status==401)throw new Error('AUTH');
+ if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'Error '+r.status)}return r.json()}
 async function pages(path,key,p){let c,all=[];do{const d=await api(path,{...p,limit:250,cursor:c});all.push(...(d[key]||[]));c=d.cursor}while(c);return all}
 function hidratar(){
  PROD=Object.keys(DB.prods).map((k,i)=>({id:i,key:k,...DB.prods[k]}));const ix={};PROD.forEach(p=>ix[p.key]=p.id);
@@ -68,14 +71,45 @@ async function sincronizar(forzar,desde){
   DB.sync=new Date().toISOString();
   try{localStorage.setItem(K,JSON.stringify(DB))}catch{MSG='Aviso: el almacenamiento del navegador está lleno. Carga un historial más corto.'}
   if(!MSG||MSG=='Sincronizando…')MSG=`Sincronizado: ${n} ventas nuevas.`;
- }catch(e){if(e.message=='AUTH')return salir();MSG='No se pudo sincronizar ('+e.message+'). Mostrando datos guardados.'}
+ }catch(e){if(e.message=='AUTH')return salir();MSG=/^Falta el token/.test(e.message)?(forzar||desde?'Falta conectar Loyverse: guarda el token en esta pantalla o sube un archivo de datos.':''):'No se pudo sincronizar ('+e.message+'). Mostrando datos guardados.'}
  hidratar();render()}
 function login(){document.getElementById('app').innerHTML='<div class="card" style="max-width:320px;margin:60px auto"><h2>Mistura Fish</h2><p><input type="password" id="clv" placeholder="Contraseña" style="width:100%" onkeydown="if(event.key==\'Enter\')entrar()"></p><button class="btn" onclick="entrar()">Entrar</button><p class="na" id="lerr"></p></div>'}
 async function entrar(){localStorage.setItem(CL,document.getElementById('clv').value);
- try{await api('/categories',{limit:1});arrancar()}catch(e){localStorage.removeItem(CL);document.getElementById('lerr').textContent=e.message=='AUTH'?'Contraseña incorrecta':'No se pudo conectar: '+e.message}}
+ try{await api('/ping');arrancar()}catch(e){localStorage.removeItem(CL);document.getElementById('lerr').textContent=e.message=='AUTH'?'Contraseña incorrecta':'No se pudo conectar: '+e.message}}
 function salir(){localStorage.removeItem(CL);login()}
 function cargarHist(){const v=document.getElementById('hd').value;if(!v){MSG='Elige la fecha desde la cual cargar.';return render()}sincronizar(true,new Date(v).toISOString())}
-function arrancar(){hidratar();render();sincronizar(false)}
+function guardar(){try{localStorage.setItem(K,JSON.stringify(DB));return true}catch{MSG='Aviso: el almacenamiento del navegador está lleno. Usa un historial más corto.';return false}}
+function guardarToken(){const t=document.getElementById('tk').value.trim();if(!t){MSG='Pega el token de Loyverse.';return render()}localStorage.setItem(TK,t);sincronizar(true)}
+function quitarToken(){localStorage.removeItem(TK);MSG='Token eliminado de este dispositivo.';render()}
+function csvParse(t,d){const R=[];let r=[],c='',q=false;
+ for(let i=0;i<t.length;i++){const x=t[i];
+  if(q){if(x=='"'&&t[i+1]=='"'){c+='"';i++}else if(x=='"')q=false;else c+=x}
+  else if(x=='"')q=true;else if(x==d){r.push(c);c=''}
+  else if(x=='\n'||x=='\r'){if(c||r.length){r.push(c);R.push(r)}r=[];c='';if(x=='\r'&&t[i+1]=='\n')i++}else c+=x}
+ if(c||r.length){r.push(c);R.push(r)}return R}
+function fechaISO(s){s=String(s).trim();const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(.*)/);
+ const x=m?new Date((m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0')+(m[4]||'')).replace(' ','T')):new Date(s.replace(' ','T'));return isNaN(x)?null:x.toISOString()}
+function importar(t){const l=t.split('\n')[0],d=(l.match(/;/g)||[]).length>(l.match(/,/g)||[]).length?';':',';
+ const R=csvParse(t,d),H=R[0].map(h=>h.trim().toLowerCase().replace(/^\ufeff/,''));
+ const col=ks=>{for(const k of ks){const i=H.findIndex(h=>h.includes(k));if(i>=0)return i}return -1};
+ const I={id:col(['receipt number','número de recibo','numero de recibo','número de venta','recibo']),f:col(['date','fecha']),t:col(['net sales','ventas netas','total','gross sales','ventas brutas']),m:col(['payment type','payment','tipo de pago','pago']),c:col(['customer name','nombre del cliente','customer','cliente']),p:col(['item','artículo','articulo','producto']),q:col(['quantity','cantidad']),g:col(['category','categoría','categoria']),k:col(['cost of goods','coste','costo']),y:col(['receipt type','tipo de recibo'])};
+ if(I.id<0||I.f<0||I.t<0){MSG='No reconocí las columnas del archivo: necesito número de recibo, fecha y total.';return render()}
+ const num=v=>parseFloat(String(v??'').replace(/[^\d,.-]/g,'').replace(d==';'?/\./g:/,/g,'').replace(',','.'))||0;
+ const N={};let err=0;
+ R.slice(1).forEach(r=>{const id=(r[I.id]||'').trim(),f=fechaISO(r[I.f]||'');if(!id||!f){err++;return}
+  if(I.y>=0&&/refund|reembolso|devol/i.test(r[I.y]))return;
+  const o=N[id]||(N[id]={id,f,cli:I.c>=0&&r[I.c]?r[I.c]:'Consumidor final',pay:I.m>=0&&r[I.m]?r[I.m]:'Sin dato',total:0,items:[]});
+  const t=num(r[I.t]);o.total+=t;
+  if(I.p>=0&&r[I.p]){const n=r[I.p],q=I.q>=0?num(r[I.q])||1:1,kc=I.k>=0?num(r[I.k]):0;
+   if(!DB.prods[n])DB.prods[n]={n,c:I.g>=0&&r[I.g]?r[I.g]:'Sin categoría',p:t/q,k:kc>0?kc/q:null};
+   o.items.push({k:n,q,t})}});
+ let n=0;const tot=Object.keys(N).length;Object.values(N).forEach(o=>{if(!DB.v[o.id]){DB.v[o.id]=o;n++}});
+ DB.sync=new Date().toISOString();MSG='';if(guardar())MSG=`Archivo importado: ${n} ventas nuevas, ${tot-n} ya existían${err?', '+err+' filas omitidas por no tener recibo o fecha válida':''}.`;
+ hidratar();render()}
+async function archivo(inp){const f=inp.files[0];if(!f)return;
+ try{let t;if(/\.xlsx?$/i.test(f.name)){const w=XLSX.read(await f.arrayBuffer());t=XLSX.utils.sheet_to_csv(w.Sheets[w.SheetNames[0]])}else t=await f.text();importar(t)}
+ catch(e){MSG='No se pudo leer el archivo: '+e.message;render()}}
+function arrancar(){hidratar();if(!localStorage.getItem(TK)&&!VENTAS.length)view='Sincronizar Loyverse';render();sincronizar(false)}
 // ===== Utilidades =====
 const S=x=>'S/ '+x.toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2});
 const D=d=>d.toLocaleDateString('es-PE',{day:'2-digit',month:'short'});
@@ -140,11 +174,15 @@ Reportes(){const vs=sel(P.k);if(!vs.length)return '<h1>Reportes</h1>'+period()+n
  <div class="grid g2"><div class="card"><h2>Comparación de períodos</h2><div class="k">Período actual</div><div class="v">${S(a)}</div><div class="k">Período anterior equivalente</div><div class="v">${b?S(b):'<span class="na">Sin datos previos</span>'}</div>${b?`<div class="${a>=b?'up':'dn'}">${a>=b?'▲':'▼'} ${((a-b)/b*100).toFixed(1)}%</div>`:''}</div>
  <div class="card wrap"><h2>Métodos de pago</h2><table><tr><th>Método</th><th>Cantidad</th><th>%</th><th>Monto</th></tr>${PAY.map(p=>`<tr><td>${p}</td><td>${m[p]||0}</td><td>${((m[p]||0)/t*100).toFixed(1)}%</td><td>${S(mt[p]||0)}</td></tr>`).join('')}<tr><td><b>Total</b></td><td><b>${t}</b></td><td><b>100%</b></td><td><b>${S(tt)}</b></td></tr></table></div>
  <div class="card wrap"><h2>Resumen contable por día</h2><table><tr><th>Fecha</th><th>Ventas</th><th>Total del día</th></tr>${Object.keys(dt).sort().map(k=>`<tr><td>${D(new Date(k+'T12:00'))}</td><td>${dn[k]}</td><td>${S(dt[k])}</td></tr>`).join('')}<tr><td><b>Suma total</b></td><td><b>${t}</b></td><td><b>${S(tt)}</b></td></tr></table></div></div>`},
-'Sincronizar Loyverse'(){return `<h1>Sincronizar Loyverse</h1><p class="sub">Los datos se leen de la API de Loyverse mediante un servidor seguro: el token nunca llega al navegador.</p>
- <div class="card"><p>Última sincronización: <b>${DB.sync?new Date(DB.sync).toLocaleString('es-PE'):'nunca'}</b> · Ventas guardadas: <b>${VENTAS.length}</b></p>
- <div class="bar"><button class="btn" onclick="sincronizar(true)">Sincronizar ahora</button><label>Cargar historial desde <input type="date" id="hd"></label><button class="pill" onclick="cargarHist()">Cargar historial</button></div>
- <p class="k">Se ignoran recibos anulados y reembolsos. Las ventas ya guardadas no se duplican. Un coste en 0 o vacío se muestra como "Información no disponible".</p>
- <button class="pill" onclick="salir()">Cerrar sesión</button></div>`},
+'Sincronizar Loyverse'(){const tk=localStorage.getItem(TK);return `<h1>Datos de Loyverse</h1><p class="sub">Conecta la API de Loyverse o sube un archivo exportado.</p>
+ <div class="grid g2"><div class="card"><h2>1. Conexión por API</h2>
+ <p class="k">${tk?'✔ Token guardado en este dispositivo.':'Pega el token de acceso de Loyverse. Se guarda solo en este dispositivo.'}</p>
+ <p><input type="password" id="tk" placeholder="${tk?'Reemplazar token':'Token de Loyverse'}" style="width:100%"></p>
+ <div class="bar"><button class="btn" onclick="guardarToken()">Guardar y sincronizar</button>${tk?'<button class="pill" onclick="quitarToken()">Quitar token</button>':''}</div>
+ <div class="bar"><button class="pill" onclick="sincronizar(true)">Sincronizar ahora</button><label>Historial desde <input type="date" id="hd"></label><button class="pill" onclick="cargarHist()">Cargar historial</button></div></div>
+ <div class="card"><h2>2. Subir archivo manualmente</h2><p class="k">CSV o Excel exportado desde Loyverse. Las ventas ya guardadas no se duplican.</p><p><input type="file" accept=".csv,.xlsx,.xls" onchange="archivo(this)"></p></div></div>
+ <div class="card"><p>Última actualización: <b>${DB.sync?new Date(DB.sync).toLocaleString('es-PE'):'nunca'}</b> · Ventas guardadas: <b>${VENTAS.length}</b></p>
+ <p class="k">Se ignoran recibos anulados y reembolsos. Un coste vacío o en 0 se muestra como "Información no disponible".</p><button class="pill" onclick="salir()">Cerrar sesión</button></div>`},
 Configuración(){return `<h1>Configuración</h1><p class="sub">Empresa, categorías, métodos de pago y perfiles</p><div class="grid g2"><div class="card"><h2>Empresa</h2><p><input value="Mistura Fish" aria-label="Nombre"></p><p><input type="file" accept="image/*" aria-label="Logo"></p></div>
  <div class="card"><h2>Categorías</h2>${CATS.map(c=>`<span class="tag">${c}</span> `).join('')}<h2 style="margin-top:12px">Métodos de pago</h2>${PAY.map(c=>`<span class="tag">${c}</span> `).join('')}</div>
  <div class="card"><h2>Perfiles</h2><p>Dueño: acceso total · Administrador: reportes, importación y configuración básica. El vendedor no usa este sistema.</p></div></div>`}};
