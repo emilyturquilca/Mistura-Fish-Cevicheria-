@@ -18,7 +18,7 @@ A web dashboard that turns the sales data already recorded in **Loyverse** into 
 Browser (index.html)  ──►  /api/loyverse (Vercel function)  ──►  Loyverse API
    stores data locally        adds the secret token
 ```
-The panel is protected by a password (`APP_PASSWORD`). Once inside, the owner either pastes the Loyverse token in the panel (kept only on that device and sent to your Vercel function) or uploads a CSV/Excel file exported from Loyverse. Data is stored in each device's browser (localStorage) and can be re-downloaded from Loyverse at any time.
+The panel is protected by a password (`APP_PASSWORD`). The password is validated before the dashboard is shown and is not stored permanently in the browser. Once inside, the owner either pastes the Loyverse token in the panel (kept only on that device and sent to your Vercel function) or uploads a CSV/Excel file exported from Loyverse. Data is stored in each device's browser (localStorage) and can be re-downloaded from Loyverse at any time.
 
 ## Project structure
 | Path | Purpose |
@@ -43,6 +43,7 @@ The panel is protected by a password (`APP_PASSWORD`). Once inside, the owner ei
 - Cancelled receipts and refunds are ignored. Sales are identified by receipt number, so re-syncing never duplicates them.
 - A cost of 0 or empty is shown as "Información no disponible" (Loyverse does not distinguish "no cost" from "cost 0"). Nothing is estimated.
 - Browser storage is about 5 MB: enough for several months of sales, not years. The panel warns when it is full.
+- The password is kept only for the current browser session. After signing out or starting a new session, it must be entered again.
 - A token entered in the panel is stored in that device's browser: use the panel only on trusted devices.
 - Use one data source (API or file), not both: file and API identify products differently and could list them twice.
 - One shared password; use a long one and keep the repository private.

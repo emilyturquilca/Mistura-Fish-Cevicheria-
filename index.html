@@ -44,9 +44,10 @@ let PAY=[],CATS=[],PROD=[],CLI=[],VENTAS=[],MSG='';
 const K='mf_datos',CL='mf_clave',TK='mf_token';
 let DB=JSON.parse(localStorage.getItem(K)||'{"v":{},"prods":{},"sync":null}');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clave=()=>sessionStorage.getItem(CL)||'';
 async function api(path,params){const u=new URL('/api/loyverse',location.origin);u.searchParams.set('path',path);
  Object.entries(params||{}).forEach(([k,v])=>v&&u.searchParams.set(k,v));
- const h={'x-clave':encodeURIComponent(localStorage.getItem(CL)||'')},t=localStorage.getItem(TK);if(t)h['x-token']=encodeURIComponent(t);
+ const h={'x-clave':encodeURIComponent(clave())},t=localStorage.getItem(TK);if(t)h['x-token']=encodeURIComponent(t);
  const r=await fetch(u,{headers:h});
  if(r.status==401)throw new Error('AUTH');
  if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'Error '+r.status)}return r.json()}
@@ -73,10 +74,10 @@ async function sincronizar(forzar,desde){
   if(!MSG||MSG=='Sincronizando…')MSG=`Sincronizado: ${n} ventas nuevas.`;
  }catch(e){if(e.message=='AUTH')return salir();MSG=/^Falta el token/.test(e.message)?(forzar||desde?'Falta conectar Loyverse: guarda el token en esta pantalla o sube un archivo de datos.':''):'No se pudo sincronizar ('+e.message+'). Mostrando datos guardados.'}
  hidratar();render()}
-function login(){document.getElementById('app').innerHTML='<div class="card" style="max-width:320px;margin:60px auto"><h2>Mistura Fish</h2><p><input type="password" id="clv" placeholder="Contraseña" style="width:100%" onkeydown="if(event.key==\'Enter\')entrar()"></p><button class="btn" onclick="entrar()">Entrar</button><p class="na" id="lerr"></p></div>'}
-async function entrar(){localStorage.setItem(CL,document.getElementById('clv').value);
- try{await api('/ping');arrancar()}catch(e){localStorage.removeItem(CL);document.getElementById('lerr').textContent=e.message=='AUTH'?'Contraseña incorrecta':'No se pudo conectar: '+e.message}}
-function salir(){localStorage.removeItem(CL);login()}
+function login(){sessionStorage.removeItem(CL);localStorage.removeItem(CL);document.getElementById('app').innerHTML='<div class="card" style="max-width:320px;margin:60px auto"><h2>Mistura Fish</h2><p><input type="password" id="clv" placeholder="Contraseña" style="width:100%" onkeydown="if(event.key==\'Enter\')entrar()"></p><button class="btn" onclick="entrar()">Entrar</button><p class="na" id="lerr"></p></div>'}
+async function entrar(){sessionStorage.setItem(CL,document.getElementById('clv').value);
+ try{await api('/ping');arrancar()}catch(e){sessionStorage.removeItem(CL);document.getElementById('lerr').textContent=e.message=='AUTH'?'Contraseña incorrecta':'No se pudo conectar: '+e.message}}
+function salir(){sessionStorage.removeItem(CL);localStorage.removeItem(CL);login()}
 function cargarHist(){const v=document.getElementById('hd').value;if(!v){MSG='Elige la fecha desde la cual cargar.';return render()}sincronizar(true,new Date(v).toISOString())}
 function guardar(){try{localStorage.setItem(K,JSON.stringify(DB));return true}catch{MSG='Aviso: el almacenamiento del navegador está lleno. Usa un historial más corto.';return false}}
 function guardarToken(){const t=document.getElementById('tk').value.trim();if(!t){MSG='Pega el token de Loyverse.';return render()}localStorage.setItem(TK,t);sincronizar(true)}
@@ -110,6 +111,7 @@ async function archivo(inp){const f=inp.files[0];if(!f)return;
  try{let t;if(/\.xlsx?$/i.test(f.name)){const w=XLSX.read(await f.arrayBuffer());t=XLSX.utils.sheet_to_csv(w.Sheets[w.SheetNames[0]])}else t=await f.text();importar(t)}
  catch(e){MSG='No se pudo leer el archivo: '+e.message;render()}}
 function arrancar(){hidratar();if(!localStorage.getItem(TK)&&!VENTAS.length)view='Sincronizar Loyverse';render();sincronizar(false)}
+async function iniciar(){localStorage.removeItem(CL);if(!clave())return login();try{await api('/ping');arrancar()}catch(e){salir()}}
 // ===== Utilidades =====
 const S=x=>'S/ '+x.toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2});
 const D=d=>d.toLocaleDateString('es-PE',{day:'2-digit',month:'short'});
@@ -191,5 +193,5 @@ function exportCSV(){const vs=sel(P.k);const csv='N°,Fecha,Cliente,Método,Tota
 function render(keep){charts.forEach(c=>c.destroy());charts=[];nav();const f=document.activeElement;const pos=f&&f.selectionStart;
  document.getElementById('app').innerHTML='<div class="demo">'+esc(MSG||(DB.sync?'Última sincronización: '+new Date(DB.sync).toLocaleString('es-PE'):'Sin sincronizar'))+'</div>'+V[view]();
  if(keep){const i=document.querySelector('input[placeholder]');if(i){i.focus();i.setSelectionRange(pos,pos)}}}
-localStorage.getItem(CL)?arrancar():login();
+iniciar();
 </script></body></html>

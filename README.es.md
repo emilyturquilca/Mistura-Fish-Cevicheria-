@@ -18,7 +18,7 @@ Panel web que convierte las ventas ya registradas en **Loyverse** en indicadores
 Navegador (index.html)  ──►  /api/loyverse (función de Vercel)  ──►  API de Loyverse
    guarda los datos             agrega el token secreto
 ```
-El panel se protege con una contraseña (`APP_PASSWORD`). Ya dentro, la dueña pega el token de Loyverse en el panel (se guarda solo en ese dispositivo y se envía a tu función de Vercel) o sube un archivo CSV/Excel exportado de Loyverse. Los datos se guardan en el navegador de cada dispositivo (localStorage) y se pueden volver a descargar de Loyverse en cualquier momento.
+El panel se protege con una contraseña (`APP_PASSWORD`). La contraseña se valida antes de mostrar el panel y no queda guardada permanentemente en el navegador. Ya dentro, la dueña pega el token de Loyverse en el panel (se guarda solo en ese dispositivo y se envía a tu función de Vercel) o sube un archivo CSV/Excel exportado de Loyverse. Los datos se guardan en el navegador de cada dispositivo (localStorage) y se pueden volver a descargar de Loyverse en cualquier momento.
 
 ## Estructura
 | Ruta | Función |
@@ -43,6 +43,7 @@ El panel se protege con una contraseña (`APP_PASSWORD`). Ya dentro, la dueña p
 - Se ignoran los recibos anulados y los reembolsos. Las ventas se identifican por N.º de recibo, así que sincronizar de nuevo no las duplica.
 - Un coste vacío o en 0 se muestra como "Información no disponible" (Loyverse no distingue "sin coste" de "coste 0"). No se estima nada.
 - El almacenamiento del navegador es de unos 5 MB: alcanza para varios meses, no para años. El panel avisa cuando se llena.
+- La contraseña se mantiene solo durante la sesión abierta del navegador. Al cerrar sesión o abrir una sesión nueva, debe ingresarse de nuevo.
 - Un token ingresado en el panel se guarda en el navegador de ese dispositivo: usa el panel solo en dispositivos de confianza.
 - Usa una sola fuente de datos (API o archivo), no ambas: identifican los productos distinto y podrían aparecer repetidos.
 - Hay una sola contraseña compartida: usa una larga y mantén el repositorio privado.
