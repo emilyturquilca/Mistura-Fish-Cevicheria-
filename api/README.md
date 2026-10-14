@@ -1,5 +1,12 @@
 # api/loyverse.js
 
+The first release also uses two authenticated routes requiring the same URL-encoded `x-clave` header:
+
+- `GET /api/operations` loads the shared PostgreSQL state and version. `POST` accepts `{id,version,type,payload}`, validates the command, then writes only if the version still matches. Repeated IDs do not add stock twice. Concurrent updates return `409`; invalid input returns `400`; unavailable storage returns `503` without confirming a write.
+- `POST /api/sync-sales` fetches catalog and receipts with the server token, normalizes totals, and merges them into PostgreSQL with version retries. The optional body field `from` requests a historical start date; the default only requests the last 30 days. Errors do not claim a successful sync.
+
+`DATABASE_URL` is supplied by the Neon integration. Credentials are never included in responses. See `README.es.md` for the versioned JSONB storage design and inventory/costing limitations.
+
 Vercel serverless function that forwards **read-only** requests to the Loyverse API (`https://api.loyverse.com/v1.0`) adding the secret token on the server.
 
 This function uses Vercel's Web API format (`export function GET(request)`), so the project root deployed in Vercel must contain both `package.json` and the `api/loyverse.js` file.

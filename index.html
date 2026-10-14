@@ -5,13 +5,15 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="assets/xlsx.full.min.js"></script>
 <script src="sales-core.js"></script>
+<script src="operations-core.js"></script>
+<script src="operations-ui.js"></script>
 <style>
 :root{--bg:#f3f8fa;--card:#fff;--ink:#0d2b3e;--mut:#5b7686;--line:#dbe8ee;--side:#0b2a40;--sea:#0e7c9b;--tq:#19b5b0;--warm:#f08a4b;--sand:#e8f4f6;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0a1b28;--card:#10293a;--ink:#e6f2f6;--mut:#8fb0bf;--line:#1d3d52;--sand:#14344a}}
 :root[data-theme=dark]{--bg:#0a1b28;--card:#10293a;--ink:#e6f2f6;--mut:#8fb0bf;--line:#1d3d52;--sand:#14344a}
 *{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "Trebuchet MS","Segoe UI",system-ui,sans-serif;display:flex;min-height:100vh}
-aside{width:210px;background:var(--side);color:#cfe6ee;padding:16px 10px;position:sticky;top:0;height:100vh;flex-shrink:0}
+aside{width:210px;background:var(--side);color:#cfe6ee;padding:16px 10px;position:sticky;top:0;height:100vh;flex-shrink:0;overflow-y:auto}
 .logo{font-weight:700;font-size:17px;color:#fff;padding:4px 10px 18px}.logo small{display:block;font-weight:400;color:var(--tq);font-size:11px}
 aside button{display:block;width:100%;text-align:left;background:none;border:0;color:inherit;padding:10px 12px;border-radius:8px;cursor:pointer;font:inherit;margin-bottom:2px}
 aside button:hover{background:#ffffff14}aside button.on{background:var(--sea);color:#fff}
@@ -35,6 +37,7 @@ tr.c{cursor:pointer}tr.c:hover{background:var(--sand)}
 canvas{max-height:260px}.empty{padding:24px;text-align:center;color:var(--mut)}
 .steps{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.steps span{background:var(--sand);border-radius:16px;padding:4px 12px}.steps .on{background:var(--tq);color:#06302f;font-weight:700}
 .demo{background:#fff4e8;color:#7a3d0a;border-radius:8px;padding:6px 12px;margin-bottom:14px;font-size:12px}
+.op-form{margin-bottom:14px}.op-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px}.op-form label{display:flex;flex-direction:column;gap:5px;color:var(--ink)}.op-form input,.op-form select{border-radius:8px;width:100%;min-width:0}.op-line{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--sand);padding:12px;border-radius:8px;margin-bottom:10px}.op-line label{flex:1;min-width:130px}.op-form fieldset{border:1px solid var(--line);border-radius:8px;margin-bottom:14px}.card+.card{margin-top:14px}.btn:disabled{opacity:.5;cursor:wait}aside .nav-label{font-size:11px;color:#8fb0bf;padding:12px 12px 4px}
 @media(max-width:760px){body{flex-direction:column}aside{width:100%;height:auto;position:static;display:flex;overflow-x:auto;gap:4px;padding:8px}.logo{display:none}aside button{width:auto;white-space:nowrap}main{padding:14px}}
 </style></head><body>
 <aside id="nav"><div class="logo">Mistura Fish<small>Panel analítico · Loyverse</small></div></aside>
@@ -65,6 +68,7 @@ async function sincronizar(forzar,desde){
  syncing=true;
  MSG='Sincronizando…';render();
  try{
+  if(OPS.configured&&serverConfigured){const counts=await opSync(desde);MSG=`Sincronizado y compartido: ${counts.added} recibos nuevos, ${counts.updated} actualizados y ${counts.cancelled} anulados retirados.`;return}
   const[cats,items,cus]=await Promise.all([pages('/categories','categories'),pages('/items','items'),pages('/customers','customers')]);
   const cn={},cm={};cats.forEach(c=>cn[c.id]=c.name);cus.forEach(c=>cm[c.id]=c.name);
   items.forEach(it=>{const v=(it.variants||[])[0]||{};DB.prods[it.id]={n:it.item_name,c:cn[it.category_id]||'Sin categoría',p:v.default_price??0,k:v.cost>0?v.cost:null}});
@@ -80,8 +84,7 @@ async function sincronizar(forzar,desde){
   DB=next;MSG='';
   if(guardar())MSG=`Sincronizado: ${counts.added} recibos nuevos, ${counts.updated} actualizados y ${counts.cancelled} anulados retirados.`;
  }catch(e){if(e.message=='AUTH')return salir();MSG=/^Falta el token/.test(e.message)?(forzar||desde?'Falta conectar Loyverse: guarda el token en esta pantalla o sube un archivo de datos.':''):'No se pudo sincronizar ('+e.message+'). Mostrando datos guardados.'}
- finally{syncing=false}
- hidratar();render()}
+ finally{syncing=false;hidratar();if(clave())render()}}
 function login(){sessionStorage.removeItem(CL);localStorage.removeItem(CL);document.getElementById('app').innerHTML='<div class="card" style="max-width:320px;margin:60px auto"><h2>Mistura Fish</h2><p><input type="password" id="clv" placeholder="Contraseña" style="width:100%" onkeydown="if(event.key==\'Enter\')entrar()"></p><button class="btn" onclick="entrar()">Entrar</button><p class="na" id="lerr"></p></div>'}
 async function entrar(){sessionStorage.setItem(CL,document.getElementById('clv').value);
  try{await api('/ping');arrancar()}catch(e){sessionStorage.removeItem(CL);document.getElementById('lerr').textContent=e.message=='AUTH'?'Contraseña incorrecta':'No se pudo conectar: '+e.message}}
@@ -118,7 +121,7 @@ function importar(t){const l=t.split('\n')[0],d=(l.match(/;/g)||[]).length>(l.ma
 async function archivo(inp){const f=inp.files[0];if(!f)return;
  try{let t;if(/\.xlsx?$/i.test(f.name)){const w=XLSX.read(await f.arrayBuffer());t=XLSX.utils.sheet_to_csv(w.Sheets[w.SheetNames[0]])}else t=await f.text();importar(t)}
  catch(e){MSG='No se pudo leer el archivo: '+e.message;render()}}
-function arrancar(){hidratar();if(!serverConfigured&&!localStorage.getItem(TK)&&!VENTAS.length)view='Sincronizar Loyverse';render();sincronizar(false)}
+async function arrancar(){hidratar();if(!serverConfigured&&!localStorage.getItem(TK)&&!VENTAS.length)view='Sincronizar Loyverse';render();await opLoad(true);if(clave())sincronizar(false)}
 async function iniciar(){localStorage.removeItem(CL);if(!clave())return login();try{await api('/ping');arrancar()}catch(e){salir()}}
 // ===== Utilidades =====
 const S=x=>'S/ '+x.toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -131,10 +134,10 @@ function sel(k){const interval=range(k);return VENTAS.filter(v=>Core.inRange(v,i
 function group(arr,keyFn,valFn){const m={};arr.forEach(x=>{const k=keyFn(x);m[k]=(m[k]||0)+valFn(x)});return m}
 function lines(vs){return vs.flatMap(v=>v.items.map(i=>({...i,pr:PROD[i.p],v})))}
 const P={k:'hoy',day:Core.dateKey(),metric:'net',from:Core.shiftDay(Core.dateKey(),-7),to:Core.dateKey()};
-let view='Dashboard',charts=[],renderRevision=0,q='',fp='',openId=null,step=0,lastImport=null;
-const MENU=['Dashboard','Ventas','Productos','Clientes','Rentabilidad','Reportes','Sincronizar Loyverse','Configuración'];
-function nav(){const n=document.getElementById('nav');n.querySelectorAll('button').forEach(b=>b.remove());
- MENU.forEach(m=>{const b=document.createElement('button');b.textContent=m;b.className=m==view?'on':'';b.onclick=()=>{view=m;openId=null;render()};n.appendChild(b)})}
+let view='Compras',charts=[],renderRevision=0,q='',fp='',openId=null,step=0,lastImport=null;
+const MENU=['Compras','Proveedores','Recepción','Inventario','Mermas','Escandallos','Rentabilidad','Sincronizar Loyverse','Dashboard','Ventas','Productos','Reportes','Configuración'];
+function nav(){const n=document.getElementById('nav');n.querySelectorAll('button,.nav-label').forEach(b=>b.remove());
+ MENU.forEach((m,i)=>{if(i==0||i==8){const label=document.createElement('div');label.className='nav-label';label.textContent=i==0?'PRIMERA VERSIÓN':'CONSULTA Y REPORTES';n.appendChild(label)}const b=document.createElement('button');b.textContent=m;b.className=m==view?'on':'';b.onclick=()=>{view=m;openId=null;render()};n.appendChild(b)})}
 function elegirPeriodo(k){P.k=k;if(k=='hoy')P.day=Core.dateKey();render()}
 function elegirDia(day){if(!Core.dateKey(Core.dayStart(day))||day>Core.dateKey())return;P.day=day;P.k=day==Core.dateKey()?'hoy':'dia';render()}
 function moverDia(offset){elegirDia(Core.shiftDay(P.k=='hoy'?Core.dateKey():P.day,offset))}
@@ -201,11 +204,11 @@ Reportes(){const vs=sel(P.k);if(!vs.length)return '<h1>Reportes</h1>'+period()+n
  ${serverConfigured?'<div class="notice">✔ Loyverse configurado para todos tus dispositivos. Abre este mismo enlace en tu laptop o tablet e inicia sesión; no necesitas volver a pegar el token.</div>':`<p class="k">${tk?'✔ Token guardado en este dispositivo.':'Pega el token de acceso de Loyverse. Se guarda solo en este dispositivo.'}</p><p class="k">Para usarlo también en otros dispositivos, configura LOYVERSE_TOKEN en el servidor.</p><p><input type="password" id="tk" placeholder="${tk?'Reemplazar token':'Token de Loyverse'}" style="width:100%"></p><div class="bar"><button class="btn" onclick="guardarToken()">Guardar y sincronizar</button>${tk?'<button class="pill" onclick="quitarToken()">Quitar token</button>':''}</div>`}
  <div class="bar"><button class="pill" onclick="sincronizar(true)">Sincronizar ahora</button><label>Historial desde <input type="date" id="hd"></label><button class="pill" onclick="cargarHist()">Cargar historial</button></div></div>
  <div class="card"><h2>2. Subir archivo manualmente</h2><p class="k">CSV o Excel exportado desde Loyverse. Las ventas ya guardadas no se duplican.</p><p><input type="file" accept=".csv,.xlsx,.xls" onchange="archivo(this)"></p></div></div>
- <div class="card"><p>Última actualización: <b>${DB.sync?new Date(DB.sync).toLocaleString('es-PE'):'nunca'}</b> · Ventas guardadas: <b>${VENTAS.length}</b></p>
+ <div class="card"><p>${OPS.configured?'Base compartida conectada: ventas y catálogo disponibles en tus dispositivos.':'Ventas guardadas solo en este navegador: la base compartida no está conectada.'}</p><p class="k">Un archivo importado manualmente se guarda solo en este navegador; la sincronización API usa la base compartida.</p><p>Última actualización: <b>${DB.sync?new Date(DB.sync).toLocaleString('es-PE'):'nunca'}</b> · Ventas guardadas: <b>${VENTAS.length}</b></p>
  <p class="k">Los recibos anulados se retiran y las devoluciones se restan. Se actualizan también los recibos existentes. El beneficio bruto requiere costos en los recibos.</p><button class="pill" onclick="salir()">Cerrar sesión</button></div>`},
-Configuración(){return `<h1>Configuración</h1><p class="sub">Empresa, categorías, métodos de pago y perfiles</p><div class="grid g2"><div class="card"><h2>Empresa</h2><p><input value="Mistura Fish" aria-label="Nombre"></p><p><input type="file" accept="image/*" aria-label="Logo"></p></div>
- <div class="card"><h2>Categorías</h2>${CATS.map(c=>`<span class="tag">${c}</span> `).join('')}<h2 style="margin-top:12px">Métodos de pago</h2>${PAY.map(c=>`<span class="tag">${c}</span> `).join('')}</div>
- <div class="card"><h2>Perfiles</h2><p>Dueño: acceso total · Administrador: reportes, importación y configuración básica. El vendedor no usa este sistema.</p></div></div>`}};
+Configuración(){return `<h1>Configuración</h1><p class="sub">Mistura Fish · alcance y conexiones</p><div class="grid g2"><div class="card"><h2>Primera versión</h2><p>Compras → proveedores → recepción → inventario → mermas → escandallos → rentabilidad → sincronización Loyverse.</p><p>${OPS.configured?'Base PostgreSQL compartida conectada.':'Base compartida pendiente de conexión.'} ${serverConfigured?'Token de Loyverse configurado en el servidor.':''}</p><p class="k">Acceso con la contraseña del panel. Las operaciones quedan registradas; no hay borrado de movimientos ni perfiles separados en esta versión.</p></div>
+ <div class="card"><h2>Segunda etapa · pendiente</h2><p>Producción → cocina/comandas → personal → clientes/fidelización → pronóstico.</p><p class="k">Estos módulos quedan para la siguiente etapa.</p></div><div class="card"><h2>Catálogo de Loyverse</h2><p>${CATS.map(c=>`<span class="tag">${esc(c)}</span> `).join('')}</p><h2>Métodos de pago</h2>${PAY.map(c=>`<span class="tag">${esc(c)}</span> `).join('')}</div></div>`}};
+Object.assign(V,OperationsViews);
 function ventasExportar(filtrar){return sel(P.k).filter(v=>!filtrar||((v.id+v.cli).toLowerCase().includes(q.toLowerCase())&&(!fp||v.pay==fp)))}
 function nombreReporte(extension){const[s,e]=range(P.k);return `ventas-${Core.dateKey(s)}-a-${Core.dateKey(new Date(e-1))}.${extension}`}
 function exportExcel(filtrar=false){
@@ -229,8 +232,9 @@ function exportExcel(filtrar=false){
 }
 function exportCSV(){const csv=Core.csv(Core.reportRows(ventasExportar(false))),a=document.createElement('a'),url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
  a.href=url;a.download=nombreReporte('csv');document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-function render(keep){renderRevision++;charts.forEach(c=>c.destroy());charts=[];nav();const f=document.activeElement;const pos=f&&f.selectionStart;
+function render(keep){opCapture();renderRevision++;charts.forEach(c=>c.destroy());charts=[];nav();const f=document.activeElement;const pos=f&&f.selectionStart;
  document.getElementById('app').innerHTML='<div class="demo">'+esc(MSG||(DB.sync?'Última sincronización: '+new Date(DB.sync).toLocaleString('es-PE'):'Sin sincronizar'))+'</div>'+V[view]();
+ opRestore();
  if(keep){const i=document.querySelector('input[placeholder]');if(i){i.focus();i.setSelectionRange(pos,pos)}}}
 iniciar();
 </script></body></html>
