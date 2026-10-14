@@ -3,7 +3,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mistura Fish · Panel analítico</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="assets/xlsx.full.min.js"></script>
+<script src="sales-core.js"></script>
 <style>
 :root{--bg:#f3f8fa;--card:#fff;--ink:#0d2b3e;--mut:#5b7686;--line:#dbe8ee;--side:#0b2a40;--sea:#0e7c9b;--tq:#19b5b0;--warm:#f08a4b;--sand:#e8f4f6;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0a1b28;--card:#10293a;--ink:#e6f2f6;--mut:#8fb0bf;--line:#1d3d52;--sand:#14344a}}
@@ -19,7 +20,7 @@ main{flex:1;min-width:0;padding:20px 24px}
 h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:0 0 10px}.sub{color:var(--mut);margin:0 0 16px}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
 .pill,select,input{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:20px;padding:6px 14px;font:inherit}
-.pill{cursor:pointer}.pill.on{background:var(--sea);border-color:var(--sea);color:#fff}
+.pill{cursor:pointer}.pill.on{background:var(--sea);border-color:var(--sea);color:#fff}.pill:disabled{opacity:.45;cursor:default}.date-nav{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.date-nav input{border-radius:8px}.notice{padding:10px 14px;background:var(--sand);border-radius:8px;margin-bottom:14px}
 .btn{background:var(--warm);color:#2a1300;border:0;border-radius:8px;padding:7px 14px;font-weight:600;cursor:pointer}
 .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:14px}
 .g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
@@ -39,10 +40,11 @@ canvas{max-height:260px}.empty{padding:24px;text-align:center;color:var(--mut)}
 <main id="app"></main>
 <script>
 // ===== Datos reales (API de Loyverse vía /api/loyverse) =====
-const today=new Date();today.setHours(0,0,0,0);
+const Core=globalThis.MisturaCore;
+const today=Core.dayStart(Core.dateKey());
 let PAY=[],CATS=[],PROD=[],CLI=[],VENTAS=[],MSG='';
 const K='mf_datos',CL='mf_clave',TK='mf_token';
-let DB=JSON.parse(localStorage.getItem(K)||'{"v":{},"prods":{},"sync":null}');
+let DB=JSON.parse(localStorage.getItem(K)||'{"v":{},"prods":{},"sync":null}'),syncing=false;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const clave=()=>sessionStorage.getItem(CL)||'';
 async function api(path,params){const u=new URL('/api/loyverse',location.origin);u.searchParams.set('path',path);
@@ -54,31 +56,36 @@ async function api(path,params){const u=new URL('/api/loyverse',location.origin)
 async function pages(path,key,p){let c,all=[];do{const d=await api(path,{...p,limit:250,cursor:c});all.push(...(d[key]||[]));c=d.cursor}while(c);return all}
 function hidratar(){
  PROD=Object.keys(DB.prods).map((k,i)=>({id:i,key:k,...DB.prods[k]}));const ix={};PROD.forEach(p=>ix[p.key]=p.id);
- VENTAS=Object.values(DB.v).map(v=>({id:v.id,f:new Date(v.f),cli:v.cli,pay:v.pay,total:v.total,items:v.items.filter(i=>ix[i.k]!==undefined).map(i=>({p:ix[i.k],q:i.q,t:i.t}))})).sort((a,b)=>a.f-b.f);
+ VENTAS=Object.values(DB.v).map(v=>({...v,f:new Date(v.f),paid:v.total,total:P.metric=='paid'?v.total:(v.net??v.total),items:(v.items||[]).filter(i=>ix[i.k]!==undefined).map(i=>({p:ix[i.k],q:i.q,t:i.t}))})).sort((a,b)=>a.f-b.f);
  PAY=[...new Set(VENTAS.map(v=>v.pay))];CATS=[...new Set(PROD.map(p=>p.c))];CLI=[...new Set(VENTAS.map(v=>v.cli))]}
 async function sincronizar(forzar,desde){
- if(!forzar&&!desde&&DB.sync&&Date.now()-new Date(DB.sync)<3e5)return;
+ if(syncing)return;
+ if(!forzar&&!desde&&DB.apiVersion===2&&DB.apiSync&&Date.now()-new Date(DB.apiSync)<3e5)return;
+ syncing=true;
  MSG='Sincronizando…';render();
  try{
   const[cats,items,cus]=await Promise.all([pages('/categories','categories'),pages('/items','items'),pages('/customers','customers')]);
   const cn={},cm={};cats.forEach(c=>cn[c.id]=c.name);cus.forEach(c=>cm[c.id]=c.name);
   items.forEach(it=>{const v=(it.variants||[])[0]||{};DB.prods[it.id]={n:it.item_name,c:cn[it.category_id]||'Sin categoría',p:v.default_price??0,k:v.cost>0?v.cost:null}});
-  const since=desde||(DB.sync?new Date(new Date(DB.sync)-864e5).toISOString():new Date(Date.now()-30*864e5).toISOString());
-  let n=0;
-  (await pages('/receipts','receipts',{updated_at_min:since})).forEach(r=>{
-   if(r.receipt_type!=='SALE'||r.cancelled_at||DB.v[r.receipt_number])return;
-   DB.v[r.receipt_number]={id:r.receipt_number,f:r.receipt_date||r.created_at,cli:cm[r.customer_id]||'Consumidor final',pay:(r.payments||[]).map(p=>p.name).join(' + ')||'Sin dato',total:r.total_money,
-    items:(r.line_items||[]).map(l=>{const k=l.item_id||l.item_name;if(!DB.prods[k])DB.prods[k]={n:l.item_name,c:'Sin categoría',p:l.price||0,k:null};return{k,q:l.quantity,t:l.total_money}})};n++});
-  DB.sync=new Date().toISOString();
-  try{localStorage.setItem(K,JSON.stringify(DB))}catch{MSG='Aviso: el almacenamiento del navegador está lleno. Carga un historial más corto.'}
-  if(!MSG||MSG=='Sincronizando…')MSG=`Sincronizado: ${n} ventas nuevas.`;
+  const started=new Date().toISOString();
+  const earliest=Object.values(DB.v).reduce((min,v)=>Math.min(min,new Date(v.f).getTime()||min),Date.now()-30*864e5);
+  const since=desde||(DB.apiVersion===2&&DB.apiSync?new Date(new Date(DB.apiSync)-864e5).toISOString():new Date(earliest).toISOString());
+  const receipts=await pages('/receipts','receipts',{updated_at_min:since});
+  const next={...DB,v:{...DB.v},prods:{...DB.prods}};
+  const counts=Core.mergeReceipts(next,receipts,cm);
+  next.sync=started;
+  // A historical load must not advance the incremental cursor or finish a partial migration.
+  if(!desde){next.apiSync=started;next.apiVersion=2}
+  DB=next;MSG='';
+  if(guardar())MSG=`Sincronizado: ${counts.added} recibos nuevos, ${counts.updated} actualizados y ${counts.cancelled} anulados retirados.`;
  }catch(e){if(e.message=='AUTH')return salir();MSG=/^Falta el token/.test(e.message)?(forzar||desde?'Falta conectar Loyverse: guarda el token en esta pantalla o sube un archivo de datos.':''):'No se pudo sincronizar ('+e.message+'). Mostrando datos guardados.'}
+ finally{syncing=false}
  hidratar();render()}
 function login(){sessionStorage.removeItem(CL);localStorage.removeItem(CL);document.getElementById('app').innerHTML='<div class="card" style="max-width:320px;margin:60px auto"><h2>Mistura Fish</h2><p><input type="password" id="clv" placeholder="Contraseña" style="width:100%" onkeydown="if(event.key==\'Enter\')entrar()"></p><button class="btn" onclick="entrar()">Entrar</button><p class="na" id="lerr"></p></div>'}
 async function entrar(){sessionStorage.setItem(CL,document.getElementById('clv').value);
  try{await api('/ping');arrancar()}catch(e){sessionStorage.removeItem(CL);document.getElementById('lerr').textContent=e.message=='AUTH'?'Contraseña incorrecta':'No se pudo conectar: '+e.message}}
 function salir(){sessionStorage.removeItem(CL);localStorage.removeItem(CL);login()}
-function cargarHist(){const v=document.getElementById('hd').value;if(!v){MSG='Elige la fecha desde la cual cargar.';return render()}sincronizar(true,new Date(v).toISOString())}
+function cargarHist(){const v=document.getElementById('hd').value;if(!v){MSG='Elige la fecha desde la cual cargar.';return render()}sincronizar(true,Core.dayStart(v).toISOString())}
 function guardar(){try{localStorage.setItem(K,JSON.stringify(DB));return true}catch{MSG='Aviso: el almacenamiento del navegador está lleno. Usa un historial más corto.';return false}}
 function guardarToken(){const t=document.getElementById('tk').value.trim();if(!t){MSG='Pega el token de Loyverse.';return render()}localStorage.setItem(TK,t);sincronizar(true)}
 function quitarToken(){localStorage.removeItem(TK);MSG='Token eliminado de este dispositivo.';render()}
@@ -88,8 +95,7 @@ function csvParse(t,d){const R=[];let r=[],c='',q=false;
   else if(x=='"')q=true;else if(x==d){r.push(c);c=''}
   else if(x=='\n'||x=='\r'){if(c||r.length){r.push(c);R.push(r)}r=[];c='';if(x=='\r'&&t[i+1]=='\n')i++}else c+=x}
  if(c||r.length){r.push(c);R.push(r)}return R}
-function fechaISO(s){s=String(s).trim();const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(.*)/);
- const x=m?new Date((m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0')+(m[4]||'')).replace(' ','T')):new Date(s.replace(' ','T'));return isNaN(x)?null:x.toISOString()}
+const fechaISO=Core.parseDate;
 function importar(t){const l=t.split('\n')[0],d=(l.match(/;/g)||[]).length>(l.match(/,/g)||[]).length?';':',';
  const R=csvParse(t,d),H=R[0].map(h=>h.trim().toLowerCase().replace(/^\ufeff/,''));
  const col=ks=>{for(const k of ks){const i=H.findIndex(h=>h.includes(k));if(i>=0)return i}return -1};
@@ -98,13 +104,14 @@ function importar(t){const l=t.split('\n')[0],d=(l.match(/;/g)||[]).length>(l.ma
  const num=v=>parseFloat(String(v??'').replace(/[^\d,.-]/g,'').replace(d==';'?/\./g:/,/g,'').replace(',','.'))||0;
  const N={};let err=0;
  R.slice(1).forEach(r=>{const id=(r[I.id]||'').trim(),f=fechaISO(r[I.f]||'');if(!id||!f){err++;return}
-  if(I.y>=0&&/refund|reembolso|devol/i.test(r[I.y]))return;
-  const o=N[id]||(N[id]={id,f,cli:I.c>=0&&r[I.c]?r[I.c]:'Consumidor final',pay:I.m>=0&&r[I.m]?r[I.m]:'Sin dato',total:0,items:[]});
-  const t=num(r[I.t]);o.total+=t;
+  if(I.y>=0&&/cancel|anulad/i.test(r[I.y])){if(DB.v[id]?.source!='api')delete DB.v[id];return}
+  const sign=I.y>=0&&/refund|reembolso|devol/i.test(r[I.y])?-1:1;
+  const o=N[id]||(N[id]={id,f,source:'file',type:sign<0?'REFUND':'SALE',cli:I.c>=0&&r[I.c]?r[I.c]:'Consumidor final',pay:I.m>=0&&r[I.m]?r[I.m]:'Sin dato',total:0,items:[]});
+  const t=sign*Math.abs(num(r[I.t]));o.total=Core.round(o.total+t);
   if(I.p>=0&&r[I.p]){const n=r[I.p],q=I.q>=0?num(r[I.q])||1:1,kc=I.k>=0?num(r[I.k]):0;
    if(!DB.prods[n])DB.prods[n]={n,c:I.g>=0&&r[I.g]?r[I.g]:'Sin categoría',p:t/q,k:kc>0?kc/q:null};
-   o.items.push({k:n,q,t})}});
- let n=0;const tot=Object.keys(N).length;Object.values(N).forEach(o=>{if(!DB.v[o.id]){DB.v[o.id]=o;n++}});
+   o.items.push({k:n,q:sign*Math.abs(q),t})}});
+ let n=0;const tot=Object.keys(N).length;Object.values(N).forEach(o=>{if(!DB.v[o.id])n++;if(DB.v[o.id]?.source!='api')DB.v[o.id]=o});
  DB.sync=new Date().toISOString();MSG='';if(guardar())MSG=`Archivo importado: ${n} ventas nuevas, ${tot-n} ya existían${err?', '+err+' filas omitidas por no tener recibo o fecha válida':''}.`;
  hidratar();render()}
 async function archivo(inp){const f=inp.files[0];if(!f)return;
@@ -114,23 +121,32 @@ function arrancar(){hidratar();if(!localStorage.getItem(TK)&&!VENTAS.length)view
 async function iniciar(){localStorage.removeItem(CL);if(!clave())return login();try{await api('/ping');arrancar()}catch(e){salir()}}
 // ===== Utilidades =====
 const S=x=>'S/ '+x.toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2});
-const D=d=>d.toLocaleDateString('es-PE',{day:'2-digit',month:'short'});
-const sum=a=>a.reduce((s,x)=>s+x,0);
-function range(k){const e=new Date(today);e.setHours(23,59,59);let s=new Date(today);
- if(k=='hoy'){}else if(k=='semana'){s.setDate(s.getDate()-((s.getDay()+6)%7))}else if(k=='mes'){s.setDate(1)}
- else if(k=='anterior'){s=new Date(today.getFullYear(),today.getMonth()-1,1);e.setTime(new Date(today.getFullYear(),today.getMonth(),0,23,59,59))}
- else{s=new Date(P.from);e.setTime(new Date(P.to).getTime()+86399e3)}return[s,e]}
-function sel(k){const[s,e]=range(k);return VENTAS.filter(v=>v.f>=s&&v.f<=e)}
+const D=d=>d.toLocaleDateString('es-PE',{timeZone:Core.TIME_ZONE,day:'2-digit',month:'short'});
+const fechaCompleta=d=>d.toLocaleDateString('es-PE',{timeZone:Core.TIME_ZONE,day:'2-digit',month:'2-digit',year:'numeric'});
+const horaLima=d=>d.toLocaleString('es-PE',{timeZone:Core.TIME_ZONE});
+const sum=a=>Core.round(a.reduce((s,x)=>s+x,0));
+function range(k){return Core.dateRange({...P,k})}
+function sel(k){const interval=range(k);return VENTAS.filter(v=>Core.inRange(v,interval))}
 function group(arr,keyFn,valFn){const m={};arr.forEach(x=>{const k=keyFn(x);m[k]=(m[k]||0)+valFn(x)});return m}
 function lines(vs){return vs.flatMap(v=>v.items.map(i=>({...i,pr:PROD[i.p],v})))}
-const P={k:'mes',from:new Date(today.getTime()-7*864e5).toISOString().slice(0,10),to:today.toISOString().slice(0,10)};
+const P={k:'hoy',day:Core.dateKey(),metric:'net',from:Core.shiftDay(Core.dateKey(),-7),to:Core.dateKey()};
 let view='Dashboard',charts=[],q='',fp='',openId=null,step=0,lastImport=null;
 const MENU=['Dashboard','Ventas','Productos','Clientes','Rentabilidad','Reportes','Sincronizar Loyverse','Configuración'];
 function nav(){const n=document.getElementById('nav');n.querySelectorAll('button').forEach(b=>b.remove());
  MENU.forEach(m=>{const b=document.createElement('button');b.textContent=m;b.className=m==view?'on':'';b.onclick=()=>{view=m;openId=null;render()};n.appendChild(b)})}
-function period(){const o=[['hoy','Hoy'],['semana','Esta semana'],['mes','Este mes'],['anterior','Mes anterior'],['custom','Personalizado']];
- return `<div class="bar">${o.map(([k,l])=>`<button class="pill ${P.k==k?'on':''}" onclick="P.k='${k}';render()">${l}</button>`).join('')}
- ${P.k=='custom'?`<input type="date" value="${P.from}" onchange="P.from=this.value;render()" aria-label="Desde"><input type="date" value="${P.to}" onchange="P.to=this.value;render()" aria-label="Hasta">`:''}</div>`}
+function elegirPeriodo(k){P.k=k;if(k=='hoy')P.day=Core.dateKey();render()}
+function elegirDia(day){if(!Core.dateKey(Core.dayStart(day))||day>Core.dateKey())return;P.day=day;P.k=day==Core.dateKey()?'hoy':'dia';render()}
+function moverDia(offset){elegirDia(Core.shiftDay(P.k=='hoy'?Core.dateKey():P.day,offset))}
+function elegirMetrica(metric){P.metric=metric;hidratar();render()}
+function period(){const actual=Core.dateKey(),day=P.k=='hoy'?actual:P.day;
+ const o=[['hoy','Hoy · '+fechaCompleta(Core.dayStart(actual))],['semana','Esta semana'],['mes','Este mes'],['anterior','Mes anterior'],['custom','Personalizado']];
+ return `<div class="bar">${o.map(([k,l])=>`<button class="pill ${P.k==k?'on':''}" onclick="elegirPeriodo('${k}')">${l}</button>`).join('')}</div>
+ <div class="bar">${['hoy','dia'].includes(P.k)?`<div class="date-nav"><button class="pill" onclick="moverDia(-1)" aria-label="Día anterior">←</button><label>Fecha <input type="date" aria-label="Fecha de ventas" value="${day}" max="${actual}" onchange="elegirDia(this.value)"></label><button class="pill" onclick="moverDia(1)" aria-label="Día siguiente" ${day>=actual?'disabled':''}>→</button></div>`:''}
+ ${P.k=='custom'?`<label>Desde <input type="date" value="${P.from}" onchange="if(this.value){P.from=this.value;render()}" aria-label="Desde"></label><label>Hasta <input type="date" value="${P.to}" onchange="if(this.value){P.to=this.value;render()}" aria-label="Hasta"></label>`:''}
+ <label>Mostrar <select aria-label="Importe de ventas" onchange="elegirMetrica(this.value)"><option value="net" ${P.metric=='net'?'selected':''}>Ventas netas</option><option value="paid" ${P.metric=='paid'?'selected':''}>Total cobrado menos devoluciones</option></select></label><span class="k">Hora de Perú (Lima)</span></div>
+ ${P.k=='custom'&&P.from>P.to?'<div class="notice">La fecha inicial debe ser anterior o igual a la final.</div>':''}`}
+function resumen(vs){const t=Core.totals(vs);
+ return `<div class="grid">${[['Ventas brutas',S(t.gross)],['Devoluciones (antes de descuentos)',S(t.refunds)],['Descuentos netos',S(t.discounts)],['Ventas netas',S(t.net)],['Total cobrado menos devoluciones',S(t.paid)],['Beneficio bruto',t.profit==null?'Información no disponible':S(t.profit)]].map(([label,value])=>`<div class="card"><div class="k">${label}</div><div class="v s">${value}</div></div>`).join('')}</div><p class="k">Ventas netas = ventas brutas − devoluciones − descuentos netos. Beneficio bruto = ventas netas − costo de productos del recibo.</p>${t.legacy?'<div class="notice">Hay recibos antiguos o de archivo sin desglose de importes. Sus totales son provisionales: sincroniza Loyverse para comparar ventas netas, impuestos y costos.</div>':''}`}
 function chart(id,type,labels,data,label,extra={}){const c=document.getElementById(id);if(!c)return;
  const cols=['#0e7c9b','#19b5b0','#f08a4b','#7fc8e0','#0b2a40','#9adbd6'];
  charts.push(new Chart(c,{type,data:{labels,datasets:[{label,data,backgroundColor:type=='line'?'#19b5b033':cols,borderColor:'#0e7c9b',fill:type=='line',tension:.3,borderWidth:type=='line'?2:0}]},
@@ -138,25 +154,25 @@ function chart(id,type,labels,data,label,extra={}){const c=document.getElementBy
 const noData='<div class="empty">No hay ventas en este período. Cambia el rango de fechas o importa datos nuevos.</div>';
 // ===== Vistas =====
 const V={
-Dashboard(){const vs=sel(P.k),mes=sel('mes'),hoy=sel('hoy');
+Dashboard(){const vs=sel(P.k),mes=sel('mes');
  if(!vs.length)return period()+noData;
  const L=lines(vs),byP=group(L,x=>x.pr.n,x=>x.q),byC=group(L,x=>x.pr.c,x=>x.t),byM=group(vs,v=>v.pay,v=>1);
- const top=(o)=>Object.entries(o).sort((a,b)=>b[1]-a[1])[0][0];
- const byD=group(vs,v=>D(v.f),v=>v.total);
- setTimeout(()=>{chart('c1','line',Object.keys(byD),Object.values(byD),'Ventas S/');chart('c2','bar',Object.keys(byC),Object.values(byC),'S/');chart('c3','doughnut',Object.keys(byM),Object.values(byM),'Ventas');
+ const top=(o)=>Object.entries(o).sort((a,b)=>b[1]-a[1])[0]?.[0]||'Sin datos';
+ const byD=group(vs,v=>Core.dateKey(v.f),v=>v.total);
+ setTimeout(()=>{chart('c1','line',Object.keys(byD).map(k=>D(Core.dayStart(k))),Object.values(byD),'Ventas S/');chart('c2','bar',Object.keys(byC),Object.values(byC),'S/');chart('c3','doughnut',Object.keys(byM),Object.values(byM),'Ventas');
   const tp=Object.entries(byP).sort((a,b)=>b[1]-a[1]).slice(0,5);chart('c4','bar',tp.map(x=>x[0]),tp.map(x=>x[1]),'Unidades',{indexAxis:'y'})});
  return `<h1>Dashboard</h1><p class="sub">Resumen del negocio con datos de Loyverse</p>${period()}
- <div class="grid">${[['Ventas de hoy',S(sum(hoy.map(v=>v.total)))],['Ventas del mes',S(sum(mes.map(v=>v.total)))],['Cantidad de ventas (período)',vs.length],['Ticket promedio',S(sum(vs.map(v=>v.total))/vs.length)]].map(a=>`<div class="card"><div class="k">${a[0]}</div><div class="v">${a[1]}</div></div>`).join('')}
- ${[['Producto más vendido',top(byP)],['Categoría líder',top(byC)],['Método más usado',top(byM)]].map(a=>`<div class="card"><div class="k">${a[0]}</div><div class="v s">${a[1]}</div></div>`).join('')}</div>
+ <div class="grid">${[[P.metric=='paid'?'Total cobrado (período)':'Ventas netas (período)',S(sum(vs.map(v=>v.total)))],['Total del mes actual',S(sum(mes.map(v=>v.total)))],['Ventas / devoluciones (período)',`${vs.filter(v=>v.type!='REFUND').length} / ${vs.filter(v=>v.type=='REFUND').length}`],['Ticket promedio de ventas',S(sum(vs.filter(v=>v.type!='REFUND').map(v=>v.total))/(vs.filter(v=>v.type!='REFUND').length||1))]].map(a=>`<div class="card"><div class="k">${a[0]}</div><div class="v">${a[1]}</div></div>`).join('')}</div>
+ ${resumen(vs)}<div class="grid">${[['Producto más vendido',top(byP)],['Categoría líder',top(byC)],['Método más usado',top(byM)]].map(a=>`<div class="card"><div class="k">${a[0]}</div><div class="v s">${esc(a[1])}</div></div>`).join('')}</div>
  <div class="grid g2"><div class="card"><h2>Evolución de ventas por día</h2><canvas id="c1"></canvas></div><div class="card"><h2>Ventas por categoría</h2><canvas id="c2"></canvas></div>
  <div class="card"><h2>Método de pago</h2><canvas id="c3"></canvas></div><div class="card"><h2>Productos más vendidos</h2><canvas id="c4"></canvas></div></div>`},
 Ventas(){let vs=sel(P.k).filter(v=>(v.id+v.cli).toLowerCase().includes(q.toLowerCase())&&(!fp||v.pay==fp)).reverse();
  const det=openId&&VENTAS.find(v=>v.id==openId),tot=sum(vs.map(v=>v.total)),bm=group(vs,v=>v.pay,v=>v.total);
  return `<h1>Ventas</h1><p class="sub">Historial importado desde Loyverse (solo consulta)</p>${period()}
- <div class="bar"><input placeholder="Buscar venta o cliente" value="${q}" oninput="q=this.value;render(true)"><select onchange="fp=this.value;render()"><option value="">Todos los métodos</option>${PAY.map(p=>`<option ${fp==p?'selected':''}>${p}</option>`).join('')}</select></div>
- ${det?`<div class="card" style="margin-bottom:14px"><h2>Detalle #${det.id} <button class="pill" onclick="openId=null;render()">Cerrar</button></h2><div class="k">${det.f.toLocaleString('es-PE')} · ${esc(det.cli)} · ${esc(det.pay)}</div>${det.items.map(i=>`<div>${i.q}× ${esc(PROD[i.p].n)} — ${S(i.t)}</div>`).join('')}<b>Total ${S(det.total)}</b></div>`:''}
+ <div class="bar"><input placeholder="Buscar venta o cliente" value="${esc(q)}" oninput="q=this.value;render(true)"><select onchange="fp=this.value;render()"><option value="">Todos los métodos</option>${PAY.map(p=>`<option ${fp==p?'selected':''}>${esc(p)}</option>`).join('')}</select><button class="btn" onclick="exportExcel(true)">Exportar Excel (.xlsx)</button></div>
+ ${det?`<div class="card" style="margin-bottom:14px"><h2>Detalle #${esc(det.id)} <button class="pill" onclick="openId=null;render()">Cerrar</button></h2><div class="k">${horaLima(det.f)} · ${esc(det.cli)} · ${esc(det.pay)} · ${det.type=='REFUND'?'Devolución':'Venta'}</div>${det.items.map(i=>`<div>${i.q}× ${esc(PROD[i.p].n)} — ${S(i.t)}</div>`).join('')}<b>Total ${S(det.total)}</b></div>`:''}
  <div class="grid"><div class="card"><div class="k">Total vendido (filtro actual)</div><div class="v">${S(tot)}</div><div class="k">${vs.length} ventas</div></div>${PAY.map(p=>`<div class="card"><div class="k">Total en ${p}</div><div class="v s">${S(bm[p]||0)}</div></div>`).join('')}</div>
- <div class="card wrap">${vs.length?`<table><tr><th>Fecha</th><th>N° venta</th><th>Cliente</th><th>Total</th><th>Método</th><th>Productos</th></tr>${vs.slice(0,50).map(v=>`<tr class="c" onclick="openId='${v.id}';render()"><td>${D(v.f)}</td><td>#${v.id}</td><td>${esc(v.cli)}</td><td>${S(v.total)}</td><td><span class="tag">${esc(v.pay)}</span></td><td>${sum(v.items.map(i=>i.q))}</td></tr>`).join('')}<tr><td colspan="3"><b>Total de las ${vs.length} ventas filtradas</b></td><td><b>${S(tot)}</b></td><td colspan="2"></td></tr></table><div class="k" style="padding-top:8px">Mostrando ${Math.min(50,vs.length)} de ${vs.length}</div>`:noData}</div>`},
+ ${resumen(vs)}<div class="card wrap">${vs.length?`<table><tr><th>Fecha (Lima)</th><th>N° recibo / tipo</th><th>Cliente</th><th>${P.metric=='paid'?'Total cobrado':'Ventas netas'}</th><th>Método</th><th>Productos</th></tr>${vs.slice(0,50).map(v=>`<tr class="c" onclick="openId=this.dataset.id;render()" data-id="${esc(v.id)}"><td>${horaLima(v.f)}</td><td>#${esc(v.id)}${v.type=='REFUND'?' · Devolución':''}</td><td>${esc(v.cli)}</td><td>${S(v.total)}</td><td><span class="tag">${esc(v.pay)}</span></td><td>${sum(v.items.map(i=>i.q))}</td></tr>`).join('')}<tr><td colspan="3"><b>Total de los ${vs.length} recibos filtrados</b></td><td><b>${S(tot)}</b></td><td colspan="2"></td></tr></table><div class="k" style="padding-top:8px">Mostrando ${Math.min(50,vs.length)} de ${vs.length}. Excel incluye todos los recibos filtrados.</div>`:noData}</div>`},
 Productos(){const L=lines(VENTAS),rows=PROD.map(p=>{const l=L.filter(x=>x.p==p.id);return{...p,q:sum(l.map(x=>x.q)),r:sum(l.map(x=>x.t))}});
  let r=rows.filter(x=>!fp||x.c==fp);const o=window.ord||'q-';const[kk,d]=[o[0],o[1]];r.sort((a,b)=>d=='-'?b[kk]-a[kk]:a[kk]-b[kk]);
  return `<h1>Productos</h1><p class="sub">Catálogo y desempeño (todo el historial importado)</p><div class="bar"><select onchange="fp=this.value;render()"><option value="">Todas las categorías</option>${CATS.map(c=>`<option ${fp==c?'selected':''}>${c}</option>`).join('')}</select>
@@ -170,12 +186,12 @@ Rentabilidad(){const r=PROD.filter(p=>p.k!=null).map(p=>({...p,m:p.p-p.k,pc:(p.p
  setTimeout(()=>chart('c1','bar',r.map(x=>x.n),r.map(x=>+x.pc.toFixed(1)),'Margen %',{indexAxis:'y'}));
  return `<h1>Rentabilidad</h1><p class="sub">Margen = Precio − Coste · Margen % = (Precio − Coste) / Precio × 100. Módulo complementario: no modifica los demás reportes.</p>
  <div class="grid g2"><div class="card"><h2>Margen % por producto (mayor a menor)</h2><canvas id="c1"></canvas></div><div class="card wrap"><table><tr><th>Producto</th><th>Precio</th><th>Coste</th><th>Margen S/</th><th>Margen %</th></tr>${r.map(x=>`<tr><td>${esc(x.n)}</td><td>${S(x.p)}</td><td>${S(x.k)}</td><td>${S(x.m)}</td><td>${x.pc.toFixed(1)}%</td></tr>`).join('')}${sin.map(x=>`<tr><td>${esc(x.n)}</td><td>${S(x.p)}</td><td colspan="3" class="na">Sin información de coste</td></tr>`).join('')}</table></div></div>`},
-Reportes(){const vs=sel(P.k);if(!vs.length)return '<h1>Reportes</h1>'+period()+noData;const m=group(vs,v=>v.pay,v=>1),t=vs.length,mt=group(vs,v=>v.pay,v=>v.total),dn=group(vs,v=>v.f.toISOString().slice(0,10),v=>1),dt=group(vs,v=>v.f.toISOString().slice(0,10),v=>v.total),tt=sum(vs.map(v=>v.total));
- const[s,e]=range(P.k),len=e-s,prev=VENTAS.filter(v=>v.f>=new Date(s-len-1)&&v.f<s),a=sum(vs.map(v=>v.total)),b=sum(prev.map(v=>v.total));
- return `<h1>Reportes</h1><p class="sub">Todos los reportes usan el rango de fechas elegido</p>${period()}<div class="bar"><button class="btn" onclick="exportCSV()">Exportar Excel (CSV)</button><button class="btn" onclick="window.print()">Exportar PDF</button></div>
+Reportes(){const vs=sel(P.k);if(!vs.length)return '<h1>Reportes</h1>'+period()+noData;const m=group(vs,v=>v.pay,v=>1),t=vs.length,mt=group(vs,v=>v.pay,v=>v.total),dn=group(vs,v=>Core.dateKey(v.f),v=>1),dt=group(vs,v=>Core.dateKey(v.f),v=>v.total),tt=sum(vs.map(v=>v.total));
+ const[s,e]=range(P.k),len=e-s,prev=VENTAS.filter(v=>v.f>=new Date(s-len)&&v.f<s),a=sum(vs.map(v=>v.total)),b=sum(prev.map(v=>v.total));
+ return `<h1>Reportes</h1><p class="sub">Todos los reportes usan el rango de fechas elegido y la hora de Lima</p>${period()}<div class="bar"><button class="btn" onclick="exportExcel()">Exportar Excel (.xlsx)</button><button class="pill" onclick="exportCSV()">Descargar CSV</button><button class="btn" onclick="window.print()">Exportar PDF</button></div>${resumen(vs)}
  <div class="grid g2"><div class="card"><h2>Comparación de períodos</h2><div class="k">Período actual</div><div class="v">${S(a)}</div><div class="k">Período anterior equivalente</div><div class="v">${b?S(b):'<span class="na">Sin datos previos</span>'}</div>${b?`<div class="${a>=b?'up':'dn'}">${a>=b?'▲':'▼'} ${((a-b)/b*100).toFixed(1)}%</div>`:''}</div>
  <div class="card wrap"><h2>Métodos de pago</h2><table><tr><th>Método</th><th>Cantidad</th><th>%</th><th>Monto</th></tr>${PAY.map(p=>`<tr><td>${p}</td><td>${m[p]||0}</td><td>${((m[p]||0)/t*100).toFixed(1)}%</td><td>${S(mt[p]||0)}</td></tr>`).join('')}<tr><td><b>Total</b></td><td><b>${t}</b></td><td><b>100%</b></td><td><b>${S(tt)}</b></td></tr></table></div>
- <div class="card wrap"><h2>Resumen contable por día</h2><table><tr><th>Fecha</th><th>Ventas</th><th>Total del día</th></tr>${Object.keys(dt).sort().map(k=>`<tr><td>${D(new Date(k+'T12:00'))}</td><td>${dn[k]}</td><td>${S(dt[k])}</td></tr>`).join('')}<tr><td><b>Suma total</b></td><td><b>${t}</b></td><td><b>${S(tt)}</b></td></tr></table></div></div>`},
+ <div class="card wrap"><h2>Resumen contable por día</h2><table><tr><th>Fecha</th><th>Recibos</th><th>${P.metric=='paid'?'Total cobrado':'Ventas netas'} del día</th></tr>${Object.keys(dt).sort().map(k=>`<tr><td>${fechaCompleta(Core.dayStart(k))}</td><td>${dn[k]}</td><td>${S(dt[k])}</td></tr>`).join('')}<tr><td><b>Suma total</b></td><td><b>${t}</b></td><td><b>${S(tt)}</b></td></tr></table></div></div>`},
 'Sincronizar Loyverse'(){const tk=localStorage.getItem(TK);return `<h1>Datos de Loyverse</h1><p class="sub">Conecta la API de Loyverse o sube un archivo exportado.</p>
  <div class="grid g2"><div class="card"><h2>1. Conexión por API</h2>
  <p class="k">${tk?'✔ Token guardado en este dispositivo.':'Pega el token de acceso de Loyverse. Se guarda solo en este dispositivo.'}</p>
@@ -184,12 +200,33 @@ Reportes(){const vs=sel(P.k);if(!vs.length)return '<h1>Reportes</h1>'+period()+n
  <div class="bar"><button class="pill" onclick="sincronizar(true)">Sincronizar ahora</button><label>Historial desde <input type="date" id="hd"></label><button class="pill" onclick="cargarHist()">Cargar historial</button></div></div>
  <div class="card"><h2>2. Subir archivo manualmente</h2><p class="k">CSV o Excel exportado desde Loyverse. Las ventas ya guardadas no se duplican.</p><p><input type="file" accept=".csv,.xlsx,.xls" onchange="archivo(this)"></p></div></div>
  <div class="card"><p>Última actualización: <b>${DB.sync?new Date(DB.sync).toLocaleString('es-PE'):'nunca'}</b> · Ventas guardadas: <b>${VENTAS.length}</b></p>
- <p class="k">Se ignoran recibos anulados y reembolsos. Un coste vacío o en 0 se muestra como "Información no disponible".</p><button class="pill" onclick="salir()">Cerrar sesión</button></div>`},
+ <p class="k">Los recibos anulados se retiran y las devoluciones se restan. Se actualizan también los recibos existentes. Las fechas usan la hora de Lima. El beneficio bruto requiere costos en los recibos.</p><button class="pill" onclick="salir()">Cerrar sesión</button></div>`},
 Configuración(){return `<h1>Configuración</h1><p class="sub">Empresa, categorías, métodos de pago y perfiles</p><div class="grid g2"><div class="card"><h2>Empresa</h2><p><input value="Mistura Fish" aria-label="Nombre"></p><p><input type="file" accept="image/*" aria-label="Logo"></p></div>
  <div class="card"><h2>Categorías</h2>${CATS.map(c=>`<span class="tag">${c}</span> `).join('')}<h2 style="margin-top:12px">Métodos de pago</h2>${PAY.map(c=>`<span class="tag">${c}</span> `).join('')}</div>
  <div class="card"><h2>Perfiles</h2><p>Dueño: acceso total · Administrador: reportes, importación y configuración básica. El vendedor no usa este sistema.</p></div></div>`}};
-function exportCSV(){const vs=sel(P.k);const csv='N°,Fecha,Cliente,Método,Total\n'+vs.map(v=>[v.id,v.f.toISOString(),v.cli,v.pay,v.total.toFixed(2)].join(',')).join('\n')+'\nTOTAL,,,,'+sum(vs.map(v=>v.total)).toFixed(2);
- const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='reporte-ventas.csv';a.click()}
+function ventasExportar(filtrar){return sel(P.k).filter(v=>!filtrar||((v.id+v.cli).toLowerCase().includes(q.toLowerCase())&&(!fp||v.pay==fp)))}
+function nombreReporte(extension){const[s,e]=range(P.k);return `ventas-${Core.dateKey(s)}-a-${Core.dateKey(new Date(e-1))}.${extension}`}
+function exportExcel(filtrar=false){
+ try{
+  if(typeof XLSX=='undefined')throw new Error('No se pudo cargar Excel. Revisa la conexión o descarga CSV desde Reportes.');
+  const vs=ventasExportar(filtrar);if(!vs.length)throw new Error('No hay recibos para exportar en este filtro.');
+  const t=Core.totals(vs),[s,e]=range(P.k),wb=XLSX.utils.book_new();
+  const summary=[['Mistura Fish · Reporte de ventas'],['Desde',fechaCompleta(s)],['Hasta',fechaCompleta(new Date(e-1))],['Zona horaria',Core.TIME_ZONE],['Importe elegido',P.metric=='paid'?'Total cobrado menos devoluciones':'Ventas netas'],['Búsqueda',filtrar?q:''],['Método',filtrar?fp||'Todos':'Todos'],[],['Concepto','Importe S/'],['Ventas brutas',t.gross],['Devoluciones antes de descuentos',t.refunds],['Descuentos netos',t.discounts],['Ventas netas',t.legacy?null:t.net],['Total cobrado menos devoluciones',t.paid],['Costo de productos',t.profit==null?null:t.cost],['Beneficio bruto',t.profit],['Ventas',t.sales],['Devoluciones',t.returns],['Recibos sin desglose',t.legacy],['Nota',t.legacy?'Importes provisionales: sincronizar Loyverse.':'Beneficio bruto no descuenta gastos operativos. Celdas vacías: información no disponible.']];
+  const daily=[['Fecha (Lima)','Recibos',P.metric=='paid'?'Total cobrado S/':'Ventas netas S/']];
+  const days=group(vs,v=>Core.dateKey(v.f),v=>v.total),counts=group(vs,v=>Core.dateKey(v.f),()=>1);
+  Object.keys(days).sort().forEach(day=>daily.push([day,counts[day],Core.round(days[day])]));
+  daily.push(['TOTAL',vs.length,sum(vs.map(v=>v.total))]);
+  for(const[name,rows,widths,moneyFrom]of [['Resumen',summary,[38,65],1],['Por día',daily,[18,12,24],2],['Recibos',Core.reportRows(vs),[18,26,16,30,24,...Array(9).fill(22)],5]]){
+   const sheet=XLSX.utils.aoa_to_sheet(rows);sheet['!cols']=widths.map(wch=>({wch}));
+   rows.forEach((row,r)=>row.forEach((value,c)=>{if(typeof value=='number'&&c>=moneyFrom&&!(name=='Resumen'&&r>=16))sheet[XLSX.utils.encode_cell({r,c})].z='#,##0.00;[Red]-#,##0.00'}));
+   if(name!='Resumen')sheet['!autofilter']={ref:XLSX.utils.encode_range({r:0,c:0},{r:rows.length-2,c:rows[0].length-1})};
+   XLSX.utils.book_append_sheet(wb,sheet,name);
+  }
+  XLSX.writeFile(wb,nombreReporte('xlsx'),{compression:true});
+ }catch(e){MSG=e.message;render()}
+}
+function exportCSV(){const csv=Core.csv(Core.reportRows(ventasExportar(false))),a=document.createElement('a'),url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+ a.href=url;a.download=nombreReporte('csv');document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 function render(keep){charts.forEach(c=>c.destroy());charts=[];nav();const f=document.activeElement;const pos=f&&f.selectionStart;
  document.getElementById('app').innerHTML='<div class="demo">'+esc(MSG||(DB.sync?'Última sincronización: '+new Date(DB.sync).toLocaleString('es-PE'):'Sin sincronizar'))+'</div>'+V[view]();
  if(keep){const i=document.querySelector('input[placeholder]');if(i){i.focus();i.setSelectionRange(pos,pos)}}}
