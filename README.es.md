@@ -7,11 +7,12 @@ Panel web que convierte las ventas ya registradas en **Loyverse** en indicadores
 ## Funciones
 - Dashboard: ventas de hoy y del mes, cantidad de ventas, ticket promedio, producto más vendido, categoría líder y método de pago más usado.
 - Gráficos: ventas por día, por categoría, métodos de pago y productos más vendidos.
-- Selector de período: hoy, esta semana, este mes, mes anterior y personalizado.
+- Selector de período: hoy con fecha, flechas para recorrer días, calendario, esta semana, este mes, mes anterior y personalizado. Todos los filtros y agrupaciones usan `America/Lima`.
 - Historial de ventas con búsqueda, filtros, detalle y **suma de totales** (útil para contabilidad).
 - Productos, clientes y rentabilidad (el margen solo se calcula si existe el coste; si no, "Información no disponible").
-- Reportes con exportación a CSV y PDF (impresión del navegador).
-- Sincronización con Loyverse al abrir y con un botón, sin duplicar ventas.
+- Reportes con exportación a Excel `.xlsx` (resumen, totales por día y todos los recibos del filtro), CSV y PDF (impresión del navegador). La pantalla Ventas también exporta sus filtros de búsqueda y método de pago.
+- Ventas brutas, descuentos, devoluciones, ventas netas, total cobrado y beneficio bruto separados. El beneficio usa el costo histórico del recibo, cuando está disponible.
+- Sincronización con Loyverse al abrir y con un botón: actualiza recibos existentes, retira anulaciones y resta devoluciones sin duplicarlos.
 
 ## Cómo funciona
 ```
@@ -24,6 +25,9 @@ El panel se protege con una contraseña (`APP_PASSWORD`). La contraseña se vali
 | Ruta | Función |
 |---|---|
 | `index.html` | Todo el front end (HTML, CSS, JavaScript y Chart.js por CDN) |
+| `sales-core.js` | Fechas de Lima, actualización de recibos, importes y filas de exportación |
+| `assets/` | SheetJS CE 0.20.3 y licencia Apache 2.0, para importar/exportar Excel sin CDN |
+| `tests/sales.test.js` | Pruebas de fechas, recibos, conciliación de importes y exportación Excel |
 | `api/loyverse.js` | Proxy seguro hacia la API de Loyverse (ver `api/README.md`) |
 | `.env.example` | Nombres de las variables de entorno necesarias |
 
@@ -40,7 +44,10 @@ El panel se protege con una contraseña (`APP_PASSWORD`). La contraseña se vali
 | `APP_PASSWORD` | Contraseña larga con la que la dueña entra al panel. |
 
 ## Notas y límites
-- Se ignoran los recibos anulados y los reembolsos. Las ventas se identifican por N.º de recibo, así que sincronizar de nuevo no las duplica.
+- Los recibos se identifican por N.º de recibo: sincronizarlos de nuevo actualiza sus importes sin duplicarlos. Los anulados se retiran y las devoluciones se guardan en negativo en su propia fecha.
+- Ventas netas = ventas brutas − devoluciones antes de descuentos − descuentos netos. Los impuestos incluidos en el precio se conservan; impuestos añadidos, propinas y recargos se muestran separados del importe de ventas netas. El total cobrado los incluye.
+- Beneficio bruto = ventas netas − costo histórico de los productos del recibo (`cost_total`). Si falta algún costo, se muestra "Información no disponible". No incluye gastos operativos.
+- La primera sincronización de esta versión vuelve a consultar desde la fecha más antigua guardada (como mínimo los últimos 30 días) para corregir recibos antiguos. Un archivo manual no adelanta el cursor de sincronización API. Los recibos antiguos o de archivo sin desglose se señalan como provisionales hasta sincronizarlos con Loyverse.
 - Un coste vacío o en 0 se muestra como "Información no disponible" (Loyverse no distingue "sin coste" de "coste 0"). No se estima nada.
 - El almacenamiento del navegador es de unos 5 MB: alcanza para varios meses, no para años. El panel avisa cuando se llena.
 - La contraseña se mantiene solo durante la sesión abierta del navegador. Al cerrar sesión o abrir una sesión nueva, debe ingresarse de nuevo.
@@ -48,7 +55,13 @@ El panel se protege con una contraseña (`APP_PASSWORD`). La contraseña se vali
 - Usa una sola fuente de datos (API o archivo), no ambas: identifican los productos distinto y podrían aparecer repetidos.
 - Hay una sola contraseña compartida: usa una larga y mantén el repositorio privado.
 - El plan gratuito (Hobby) de Vercel es solo para uso no comercial; un negocio necesita un plan de pago u otro servicio.
-- Los nombres de campos de Loyverse que usa `index.html` se escribieron de memoria: verifícalos con un recibo real y la documentación oficial.
+- Referencias de importes: [API de Loyverse](https://developer.loyverse.com/docs/) y [definiciones de ventas del Back Office](https://help.loyverse.com/help/sales-summary-report-back-office). Compara siempre el mismo período y los mismos filtros de tienda y empleado; este panel actualmente importa todas las tiendas y empleados.
+
+## Verificación
+
+Ejecuta `npm test` con Node.js. Incluye límites de medianoche de Lima, cambio de día, actualización y anulación de recibos, devoluciones, descuentos e impuestos, costos desconocidos, filtros y una exportación `.xlsx` que se vuelve a abrir para verificar sus valores numéricos.
+
+Para verificar diferencias de un día, sincroniza los recibos reales, selecciona ese día y compara el Excel con Loyverse. Las pruebas usan datos sintéticos para demostrar el error de UTC; no identifican por sí solas los recibos que explican una diferencia real del negocio.
 
 ## Problemas frecuentes
 | Síntoma | Causa probable |

@@ -24,10 +24,10 @@ export async function GET(request) {
   }
 
   const path = url.searchParams.get('path');
-  if (path === '/ping') return json({ ok: true });
+  if (path === '/ping') return json({ ok: true, loyverseConfigured: Boolean(process.env.LOYVERSE_TOKEN) });
   if (!PERMITIDAS.includes(path)) return json({ error: 'Ruta no permitida' }, 400);
 
-  const token = dec(request.headers.get('x-token')) || process.env.LOYVERSE_TOKEN;
+  const token = process.env.LOYVERSE_TOKEN || dec(request.headers.get('x-token'));
   if (!token) {
     return json({ error: 'Falta el token de Loyverse. Guárdalo en el panel.' }, 400);
   }
