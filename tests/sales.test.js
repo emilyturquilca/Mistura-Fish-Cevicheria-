@@ -126,18 +126,21 @@ function app() {
   const element = () => ({ innerHTML: '', querySelectorAll: () => [], appendChild() {}, remove() {}, click() {} });
   const storage = new Map();
   const context = vm.createContext({
-    console, Date, Intl, URL, Blob, setTimeout() {},
+    console, Date, Intl, URL, Blob, structuredClone, setTimeout() {},
     localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: k => storage.delete(k) },
     sessionStorage: { getItem: () => '', removeItem() {} },
-    document: { getElementById: id => { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); }, createElement: element, body: element() },
+    document: { querySelectorAll: () => [], querySelector: () => null, getElementById: id => { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); }, createElement: element, body: element() },
     window: {}, location: { origin: 'http://localhost' }
   });
   vm.runInContext(readFileSync(new URL('../sales-core.js', import.meta.url), 'utf8'), context);
+  vm.runInContext(readFileSync(new URL('../operations-core.js', import.meta.url), 'utf8'), context);
+  vm.runInContext(readFileSync(new URL('../operations-ui.js', import.meta.url), 'utf8'), context);
   if (existsSync(new URL('../assets/xlsx.full.min.js', import.meta.url))) {
     vm.runInContext(readFileSync(new URL('../assets/xlsx.full.min.js', import.meta.url), 'utf8'), context);
   }
   const source = readFileSync(new URL('../index.html', import.meta.url), 'utf8').match(/<script>\s*([\s\S]*?)<\/script>/)[1];
   vm.runInContext(source, context);
+  vm.runInContext('OPS.state=OpsCore.initial();OPS.configured=true;', context);
   return context;
 }
 
@@ -148,7 +151,7 @@ test('all UI views render, daily navigation updates the chosen total, and labels
   assert.match(vm.runInContext('V.Dashboard()', context), /Ventas netas \(período\)/);
   assert.match(vm.runInContext('V.Ventas()', context), /12\/10\/2026/);
   assert.match(vm.runInContext('V.Reportes()', context), /Exportar Excel \(.xlsx\)/);
-  for (const view of ['Productos', 'Clientes', 'Rentabilidad', 'Sincronizar Loyverse', 'Configuración']) {
+  for (const view of ['Compras', 'Proveedores', 'Recepción', 'Inventario', 'Mermas', 'Escandallos', 'Productos', 'Rentabilidad', 'Sincronizar Loyverse', 'Configuración']) {
     assert.equal(typeof vm.runInContext(`V[${JSON.stringify(view)}]()`, context), 'string');
   }
   vm.runInContext('moverDia(-1)', context);
