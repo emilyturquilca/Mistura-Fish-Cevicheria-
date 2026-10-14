@@ -16,17 +16,18 @@ const server = createServer(async (request, response) => {
   response.setHeader('Cache-Control', 'no-store');
   if (url.pathname === '/api/loyverse') {
     const path = url.searchParams.get('path');
-    const data = { '/ping': { ok: true }, '/categories': { categories: [] }, '/customers': { customers: [] }, '/items': { items: [] }, '/receipts': { receipts } }[path];
+    const data = { '/ping': { ok: true }, '/categories': { categories: [] }, '/customers': { customers: [] }, '/items': { items: [{ id: 'ceviche', item_name: 'Ceviche', variants: [{ default_price: 40, cost: 15 }] }] }, '/receipts': { receipts } }[path];
     response.writeHead(data ? 200 : 404, { 'Content-Type': 'application/json' });
     response.end(JSON.stringify(data || { error: 'Not found' }));
     return;
   }
-  const files = { '/': 'index.html', '/index.html': 'index.html', '/sales-core.js': 'sales-core.js', '/assets/xlsx.full.min.js': 'assets/xlsx.full.min.js' };
+  const files = { '/': 'index.html', '/dark': 'index.html', '/index.html': 'index.html', '/sales-core.js': 'sales-core.js', '/assets/xlsx.full.min.js': 'assets/xlsx.full.min.js' };
   const file = files[url.pathname];
   if (!file) { response.writeHead(404); response.end(); return; }
   try {
     let content = await readFile(new URL(file, root));
     if (file === 'index.html') content = content.toString().replace('<title>', '<title>PRUEBA CON DATOS FICTICIOS · ').replace('iniciar();', "sessionStorage.setItem('mf_clave','local-preview-only');iniciar();").replace('<body>', '<body style="padding-top:28px"><div style="position:fixed;top:0;left:0;right:0;height:28px;z-index:100;background:#ffe1a8;color:#352300;text-align:center;padding:4px">PRUEBA LOCAL · Datos ficticios</div>');
+    if (url.pathname === '/dark') content = content.replace('<html lang="es">', '<html lang="es" data-theme="dark">');
     response.writeHead(200, { 'Content-Type': file.endsWith('.html') ? 'text/html; charset=utf-8' : 'text/javascript; charset=utf-8' });
     response.end(content);
   } catch { response.writeHead(500); response.end('Preview unavailable'); }

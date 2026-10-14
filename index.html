@@ -31,6 +31,7 @@ h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:0 0 10px}.sub{color:va
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}th{color:var(--mut);font-weight:600;font-size:12px}
 tr.c{cursor:pointer}tr.c:hover{background:var(--sand)}
 .na{color:var(--mut);font-style:italic}.tag{background:var(--sand);color:var(--sea);border-radius:10px;padding:2px 8px;font-size:12px}
+.product-name{color:var(--ink);font-weight:700}
 canvas{max-height:260px}.empty{padding:24px;text-align:center;color:var(--mut)}
 .steps{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.steps span{background:var(--sand);border-radius:16px;padding:4px 12px}.steps .on{background:var(--tq);color:#06302f;font-weight:700}
 .demo{background:#fff4e8;color:#7a3d0a;border-radius:8px;padding:6px 12px;margin-bottom:14px;font-size:12px}
@@ -60,7 +61,7 @@ function hidratar(){
  PAY=[...new Set(VENTAS.map(v=>v.pay))];CATS=[...new Set(PROD.map(p=>p.c))];CLI=[...new Set(VENTAS.map(v=>v.cli))]}
 async function sincronizar(forzar,desde){
  if(syncing)return;
- if(!forzar&&!desde&&DB.apiVersion===2&&DB.apiSync&&Date.now()-new Date(DB.apiSync)<3e5)return;
+ if(!forzar&&!desde&&DB.apiVersion===3&&DB.apiSync&&Date.now()-new Date(DB.apiSync)<3e5)return;
  syncing=true;
  MSG='Sincronizando…';render();
  try{
@@ -68,14 +69,14 @@ async function sincronizar(forzar,desde){
   const cn={},cm={};cats.forEach(c=>cn[c.id]=c.name);cus.forEach(c=>cm[c.id]=c.name);
   items.forEach(it=>{const v=(it.variants||[])[0]||{};DB.prods[it.id]={n:it.item_name,c:cn[it.category_id]||'Sin categoría',p:v.default_price??0,k:v.cost>0?v.cost:null}});
   const started=new Date().toISOString();
-  const earliest=Object.values(DB.v).reduce((min,v)=>Math.min(min,new Date(v.f).getTime()||min),Date.now()-30*864e5);
-  const since=desde||(DB.apiVersion===2&&DB.apiSync?new Date(new Date(DB.apiSync)-864e5).toISOString():new Date(earliest).toISOString());
-  const receipts=await pages('/receipts','receipts',{updated_at_min:since});
+  const createdSince=desde||new Date(Date.now()-30*864e5).toISOString();
+  const since=desde||(DB.apiVersion===3&&DB.apiSync?new Date(new Date(DB.apiSync)-864e5).toISOString():createdSince);
+  const receipts=await pages('/receipts','receipts',{created_at_min:createdSince,updated_at_min:since});
   const next={...DB,v:{...DB.v},prods:{...DB.prods}};
   const counts=Core.mergeReceipts(next,receipts,cm);
   next.sync=started;
   // A historical load must not advance the incremental cursor or finish a partial migration.
-  if(!desde){next.apiSync=started;next.apiVersion=2}
+  if(!desde){next.apiSync=started;next.apiVersion=3}
   DB=next;MSG='';
   if(guardar())MSG=`Sincronizado: ${counts.added} recibos nuevos, ${counts.updated} actualizados y ${counts.cancelled} anulados retirados.`;
  }catch(e){if(e.message=='AUTH')return salir();MSG=/^Falta el token/.test(e.message)?(forzar||desde?'Falta conectar Loyverse: guarda el token en esta pantalla o sube un archivo de datos.':''):'No se pudo sincronizar ('+e.message+'). Mostrando datos guardados.'}
@@ -143,14 +144,16 @@ function period(){const actual=Core.dateKey(),day=P.k=='hoy'?actual:P.day;
  return `<div class="bar">${o.map(([k,l])=>`<button class="pill ${P.k==k?'on':''}" onclick="elegirPeriodo('${k}')">${l}</button>`).join('')}</div>
  <div class="bar">${['hoy','dia'].includes(P.k)?`<div class="date-nav"><button class="pill" onclick="moverDia(-1)" aria-label="Día anterior">←</button><label>Fecha <input type="date" aria-label="Fecha de ventas" value="${day}" max="${actual}" onchange="elegirDia(this.value)"></label><button class="pill" onclick="moverDia(1)" aria-label="Día siguiente" ${day>=actual?'disabled':''}>→</button></div>`:''}
  ${P.k=='custom'?`<label>Desde <input type="date" value="${P.from}" onchange="if(this.value){P.from=this.value;render()}" aria-label="Desde"></label><label>Hasta <input type="date" value="${P.to}" onchange="if(this.value){P.to=this.value;render()}" aria-label="Hasta"></label>`:''}
- <label>Mostrar <select aria-label="Importe de ventas" onchange="elegirMetrica(this.value)"><option value="net" ${P.metric=='net'?'selected':''}>Ventas netas</option><option value="paid" ${P.metric=='paid'?'selected':''}>Total cobrado menos devoluciones</option></select></label><span class="k">Hora de Perú (Lima)</span></div>
+ <label>Mostrar <select aria-label="Importe de ventas" onchange="elegirMetrica(this.value)"><option value="net" ${P.metric=='net'?'selected':''}>Ventas netas</option><option value="paid" ${P.metric=='paid'?'selected':''}>Total cobrado menos devoluciones</option></select></label></div>
  ${P.k=='custom'&&P.from>P.to?'<div class="notice">La fecha inicial debe ser anterior o igual a la final.</div>':''}`}
 function resumen(vs){const t=Core.totals(vs);
  return `<div class="grid">${[['Ventas brutas',S(t.gross)],['Devoluciones (antes de descuentos)',S(t.refunds)],['Descuentos netos',S(t.discounts)],['Ventas netas',S(t.net)],['Total cobrado menos devoluciones',S(t.paid)],['Beneficio bruto',t.profit==null?'Información no disponible':S(t.profit)]].map(([label,value])=>`<div class="card"><div class="k">${label}</div><div class="v s">${value}</div></div>`).join('')}</div><p class="k">Ventas netas = ventas brutas − devoluciones − descuentos netos. Beneficio bruto = ventas netas − costo de productos del recibo.</p>${t.legacy?'<div class="notice">Hay recibos antiguos o de archivo sin desglose de importes. Sus totales son provisionales: sincroniza Loyverse para comparar ventas netas, impuestos y costos.</div>':''}`}
 function chart(id,type,labels,data,label,extra={}){const c=document.getElementById(id);if(!c)return;
  const cols=['#0e7c9b','#19b5b0','#f08a4b','#7fc8e0','#0b2a40','#9adbd6'];
+ const style=getComputedStyle(document.documentElement),ink=style.getPropertyValue('--ink').trim(),line=style.getPropertyValue('--line').trim();
+ const scales=['line','bar'].includes(type)?{x:{ticks:{color:ink,font:{weight:'600'}},grid:{color:line}},y:{ticks:{color:ink,font:{weight:'600'}},grid:{color:line}}}:undefined;
  charts.push(new Chart(c,{type,data:{labels,datasets:[{label,data,backgroundColor:type=='line'?'#19b5b033':cols,borderColor:'#0e7c9b',fill:type=='line',tension:.3,borderWidth:type=='line'?2:0}]},
- options:{responsive:true,plugins:{legend:{display:['doughnut'].includes(type),position:'bottom'}},...extra}}))}
+ options:{responsive:true,scales,plugins:{legend:{display:['doughnut'].includes(type),position:'bottom',labels:{color:ink,font:{weight:'600'}}}},...extra}}))}
 const noData='<div class="empty">No hay ventas en este período. Cambia el rango de fechas o importa datos nuevos.</div>';
 // ===== Vistas =====
 const V={
@@ -172,7 +175,7 @@ Ventas(){let vs=sel(P.k).filter(v=>(v.id+v.cli).toLowerCase().includes(q.toLower
  <div class="bar"><input placeholder="Buscar venta o cliente" value="${esc(q)}" oninput="q=this.value;render(true)"><select onchange="fp=this.value;render()"><option value="">Todos los métodos</option>${PAY.map(p=>`<option ${fp==p?'selected':''}>${esc(p)}</option>`).join('')}</select><button class="btn" onclick="exportExcel(true)">Exportar Excel (.xlsx)</button></div>
  ${det?`<div class="card" style="margin-bottom:14px"><h2>Detalle #${esc(det.id)} <button class="pill" onclick="openId=null;render()">Cerrar</button></h2><div class="k">${horaLima(det.f)} · ${esc(det.cli)} · ${esc(det.pay)} · ${det.type=='REFUND'?'Devolución':'Venta'}</div>${det.items.map(i=>`<div>${i.q}× ${esc(PROD[i.p].n)} — ${S(i.t)}</div>`).join('')}<b>Total ${S(det.total)}</b></div>`:''}
  <div class="grid"><div class="card"><div class="k">Total vendido (filtro actual)</div><div class="v">${S(tot)}</div><div class="k">${vs.length} ventas</div></div>${PAY.map(p=>`<div class="card"><div class="k">Total en ${p}</div><div class="v s">${S(bm[p]||0)}</div></div>`).join('')}</div>
- ${resumen(vs)}<div class="card wrap">${vs.length?`<table><tr><th>Fecha (Lima)</th><th>N° recibo / tipo</th><th>Cliente</th><th>${P.metric=='paid'?'Total cobrado':'Ventas netas'}</th><th>Método</th><th>Productos</th></tr>${vs.slice(0,50).map(v=>`<tr class="c" onclick="openId=this.dataset.id;render()" data-id="${esc(v.id)}"><td>${horaLima(v.f)}</td><td>#${esc(v.id)}${v.type=='REFUND'?' · Devolución':''}</td><td>${esc(v.cli)}</td><td>${S(v.total)}</td><td><span class="tag">${esc(v.pay)}</span></td><td>${sum(v.items.map(i=>i.q))}</td></tr>`).join('')}<tr><td colspan="3"><b>Total de los ${vs.length} recibos filtrados</b></td><td><b>${S(tot)}</b></td><td colspan="2"></td></tr></table><div class="k" style="padding-top:8px">Mostrando ${Math.min(50,vs.length)} de ${vs.length}. Excel incluye todos los recibos filtrados.</div>`:noData}</div>`},
+ ${resumen(vs)}<div class="card wrap">${vs.length?`<table><tr><th>Fecha</th><th>N° recibo / tipo</th><th>Cliente</th><th>${P.metric=='paid'?'Total cobrado':'Ventas netas'}</th><th>Método</th><th>Productos</th></tr>${vs.slice(0,50).map(v=>`<tr class="c" onclick="openId=this.dataset.id;render()" data-id="${esc(v.id)}"><td>${horaLima(v.f)}</td><td>#${esc(v.id)}${v.type=='REFUND'?' · Devolución':''}</td><td>${esc(v.cli)}</td><td>${S(v.total)}</td><td><span class="tag">${esc(v.pay)}</span></td><td>${sum(v.items.map(i=>i.q))}</td></tr>`).join('')}<tr><td colspan="3"><b>Total de los ${vs.length} recibos filtrados</b></td><td><b>${S(tot)}</b></td><td colspan="2"></td></tr></table><div class="k" style="padding-top:8px">Mostrando ${Math.min(50,vs.length)} de ${vs.length}. Excel incluye todos los recibos filtrados.</div>`:noData}</div>`},
 Productos(){const L=lines(VENTAS),rows=PROD.map(p=>{const l=L.filter(x=>x.p==p.id);return{...p,q:sum(l.map(x=>x.q)),r:sum(l.map(x=>x.t))}});
  let r=rows.filter(x=>!fp||x.c==fp);const o=window.ord||'q-';const[kk,d]=[o[0],o[1]];r.sort((a,b)=>d=='-'?b[kk]-a[kk]:a[kk]-b[kk]);
  return `<h1>Productos</h1><p class="sub">Catálogo y desempeño (todo el historial importado)</p><div class="bar"><select onchange="fp=this.value;render()"><option value="">Todas las categorías</option>${CATS.map(c=>`<option ${fp==c?'selected':''}>${c}</option>`).join('')}</select>
@@ -185,10 +188,10 @@ Clientes(){const m={};VENTAS.forEach(v=>{if(v.cli=='Consumidor final')return;con
 Rentabilidad(){const r=PROD.filter(p=>p.k!=null).map(p=>({...p,m:p.p-p.k,pc:(p.p-p.k)/p.p*100})).sort((a,b)=>b.pc-a.pc),sin=PROD.filter(p=>p.k==null);
  setTimeout(()=>chart('c1','bar',r.map(x=>x.n),r.map(x=>+x.pc.toFixed(1)),'Margen %',{indexAxis:'y'}));
  return `<h1>Rentabilidad</h1><p class="sub">Margen = Precio − Coste · Margen % = (Precio − Coste) / Precio × 100. Módulo complementario: no modifica los demás reportes.</p>
- <div class="grid g2"><div class="card"><h2>Margen % por producto (mayor a menor)</h2><canvas id="c1"></canvas></div><div class="card wrap"><table><tr><th>Producto</th><th>Precio</th><th>Coste</th><th>Margen S/</th><th>Margen %</th></tr>${r.map(x=>`<tr><td>${esc(x.n)}</td><td>${S(x.p)}</td><td>${S(x.k)}</td><td>${S(x.m)}</td><td>${x.pc.toFixed(1)}%</td></tr>`).join('')}${sin.map(x=>`<tr><td>${esc(x.n)}</td><td>${S(x.p)}</td><td colspan="3" class="na">Sin información de coste</td></tr>`).join('')}</table></div></div>`},
+ <div class="grid g2"><div class="card"><h2>Margen % por producto (mayor a menor)</h2><canvas id="c1"></canvas></div><div class="card wrap"><table><tr><th>Producto</th><th>Precio</th><th>Coste</th><th>Margen S/</th><th>Margen %</th></tr>${r.map(x=>`<tr><td class="product-name">${esc(x.n)}</td><td>${S(x.p)}</td><td>${S(x.k)}</td><td>${S(x.m)}</td><td>${x.pc.toFixed(1)}%</td></tr>`).join('')}${sin.map(x=>`<tr><td class="product-name">${esc(x.n)}</td><td>${S(x.p)}</td><td colspan="3" class="na">Sin información de coste</td></tr>`).join('')}</table></div></div>`},
 Reportes(){const vs=sel(P.k);if(!vs.length)return '<h1>Reportes</h1>'+period()+noData;const m=group(vs,v=>v.pay,v=>1),t=vs.length,mt=group(vs,v=>v.pay,v=>v.total),dn=group(vs,v=>Core.dateKey(v.f),v=>1),dt=group(vs,v=>Core.dateKey(v.f),v=>v.total),tt=sum(vs.map(v=>v.total));
  const[s,e]=range(P.k),len=e-s,prev=VENTAS.filter(v=>v.f>=new Date(s-len)&&v.f<s),a=sum(vs.map(v=>v.total)),b=sum(prev.map(v=>v.total));
- return `<h1>Reportes</h1><p class="sub">Todos los reportes usan el rango de fechas elegido y la hora de Lima</p>${period()}<div class="bar"><button class="btn" onclick="exportExcel()">Exportar Excel (.xlsx)</button><button class="pill" onclick="exportCSV()">Descargar CSV</button><button class="btn" onclick="window.print()">Exportar PDF</button></div>${resumen(vs)}
+ return `<h1>Reportes</h1><p class="sub">Todos los reportes usan el rango de fechas elegido</p>${period()}<div class="bar"><button class="btn" onclick="exportExcel()">Exportar Excel (.xlsx)</button><button class="pill" onclick="exportCSV()">Descargar CSV</button><button class="btn" onclick="window.print()">Exportar PDF</button></div>${resumen(vs)}
  <div class="grid g2"><div class="card"><h2>Comparación de períodos</h2><div class="k">Período actual</div><div class="v">${S(a)}</div><div class="k">Período anterior equivalente</div><div class="v">${b?S(b):'<span class="na">Sin datos previos</span>'}</div>${b?`<div class="${a>=b?'up':'dn'}">${a>=b?'▲':'▼'} ${((a-b)/b*100).toFixed(1)}%</div>`:''}</div>
  <div class="card wrap"><h2>Métodos de pago</h2><table><tr><th>Método</th><th>Cantidad</th><th>%</th><th>Monto</th></tr>${PAY.map(p=>`<tr><td>${p}</td><td>${m[p]||0}</td><td>${((m[p]||0)/t*100).toFixed(1)}%</td><td>${S(mt[p]||0)}</td></tr>`).join('')}<tr><td><b>Total</b></td><td><b>${t}</b></td><td><b>100%</b></td><td><b>${S(tt)}</b></td></tr></table></div>
  <div class="card wrap"><h2>Resumen contable por día</h2><table><tr><th>Fecha</th><th>Recibos</th><th>${P.metric=='paid'?'Total cobrado':'Ventas netas'} del día</th></tr>${Object.keys(dt).sort().map(k=>`<tr><td>${fechaCompleta(Core.dayStart(k))}</td><td>${dn[k]}</td><td>${S(dt[k])}</td></tr>`).join('')}<tr><td><b>Suma total</b></td><td><b>${t}</b></td><td><b>${S(tt)}</b></td></tr></table></div></div>`},
@@ -198,7 +201,7 @@ Reportes(){const vs=sel(P.k);if(!vs.length)return '<h1>Reportes</h1>'+period()+n
  <div class="bar"><button class="pill" onclick="sincronizar(true)">Sincronizar ahora</button><label>Historial desde <input type="date" id="hd"></label><button class="pill" onclick="cargarHist()">Cargar historial</button></div></div>
  <div class="card"><h2>2. Subir archivo manualmente</h2><p class="k">CSV o Excel exportado desde Loyverse. Las ventas ya guardadas no se duplican.</p><p><input type="file" accept=".csv,.xlsx,.xls" onchange="archivo(this)"></p></div></div>
  <div class="card"><p>Última actualización: <b>${DB.sync?new Date(DB.sync).toLocaleString('es-PE'):'nunca'}</b> · Ventas guardadas: <b>${VENTAS.length}</b></p>
- <p class="k">Los recibos anulados se retiran y las devoluciones se restan. Se actualizan también los recibos existentes. Las fechas usan la hora de Lima. El beneficio bruto requiere costos en los recibos.</p><button class="pill" onclick="salir()">Cerrar sesión</button></div>`},
+ <p class="k">Los recibos anulados se retiran y las devoluciones se restan. Se actualizan también los recibos existentes. El beneficio bruto requiere costos en los recibos.</p><button class="pill" onclick="salir()">Cerrar sesión</button></div>`},
 Configuración(){return `<h1>Configuración</h1><p class="sub">Empresa, categorías, métodos de pago y perfiles</p><div class="grid g2"><div class="card"><h2>Empresa</h2><p><input value="Mistura Fish" aria-label="Nombre"></p><p><input type="file" accept="image/*" aria-label="Logo"></p></div>
  <div class="card"><h2>Categorías</h2>${CATS.map(c=>`<span class="tag">${c}</span> `).join('')}<h2 style="margin-top:12px">Métodos de pago</h2>${PAY.map(c=>`<span class="tag">${c}</span> `).join('')}</div>
  <div class="card"><h2>Perfiles</h2><p>Dueño: acceso total · Administrador: reportes, importación y configuración básica. El vendedor no usa este sistema.</p></div></div>`}};
@@ -209,8 +212,8 @@ function exportExcel(filtrar=false){
   if(typeof XLSX=='undefined')throw new Error('No se pudo cargar Excel. Revisa la conexión o descarga CSV desde Reportes.');
   const vs=ventasExportar(filtrar);if(!vs.length)throw new Error('No hay recibos para exportar en este filtro.');
   const t=Core.totals(vs),[s,e]=range(P.k),wb=XLSX.utils.book_new();
-  const summary=[['Mistura Fish · Reporte de ventas'],['Desde',fechaCompleta(s)],['Hasta',fechaCompleta(new Date(e-1))],['Zona horaria',Core.TIME_ZONE],['Importe elegido',P.metric=='paid'?'Total cobrado menos devoluciones':'Ventas netas'],['Búsqueda',filtrar?q:''],['Método',filtrar?fp||'Todos':'Todos'],[],['Concepto','Importe S/'],['Ventas brutas',t.gross],['Devoluciones antes de descuentos',t.refunds],['Descuentos netos',t.discounts],['Ventas netas',t.legacy?null:t.net],['Total cobrado menos devoluciones',t.paid],['Costo de productos',t.profit==null?null:t.cost],['Beneficio bruto',t.profit],['Ventas',t.sales],['Devoluciones',t.returns],['Recibos sin desglose',t.legacy],['Nota',t.legacy?'Importes provisionales: sincronizar Loyverse.':'Beneficio bruto no descuenta gastos operativos. Celdas vacías: información no disponible.']];
-  const daily=[['Fecha (Lima)','Recibos',P.metric=='paid'?'Total cobrado S/':'Ventas netas S/']];
+  const summary=[['Mistura Fish · Reporte de ventas'],['Desde',fechaCompleta(s)],['Hasta',fechaCompleta(new Date(e-1))],['Hora local','UTC-05:00'],['Importe elegido',P.metric=='paid'?'Total cobrado menos devoluciones':'Ventas netas'],['Búsqueda',filtrar?q:''],['Método',filtrar?fp||'Todos':'Todos'],[],['Concepto','Importe S/'],['Ventas brutas',t.gross],['Devoluciones antes de descuentos',t.refunds],['Descuentos netos',t.discounts],['Ventas netas',t.legacy?null:t.net],['Total cobrado menos devoluciones',t.paid],['Costo de productos',t.profit==null?null:t.cost],['Beneficio bruto',t.profit],['Ventas',t.sales],['Devoluciones',t.returns],['Recibos sin desglose',t.legacy],['Nota',t.legacy?'Importes provisionales: sincronizar Loyverse.':'Beneficio bruto no descuenta gastos operativos. Celdas vacías: información no disponible.']];
+  const daily=[['Fecha','Recibos',P.metric=='paid'?'Total cobrado S/':'Ventas netas S/']];
   const days=group(vs,v=>Core.dateKey(v.f),v=>v.total),counts=group(vs,v=>Core.dateKey(v.f),()=>1);
   Object.keys(days).sort().forEach(day=>daily.push([day,counts[day],Core.round(days[day])]));
   daily.push(['TOTAL',vs.length,sum(vs.map(v=>v.total))]);
