@@ -44,15 +44,15 @@ const Core=globalThis.MisturaCore;
 const today=Core.dayStart(Core.dateKey());
 let PAY=[],CATS=[],PROD=[],CLI=[],VENTAS=[],MSG='';
 const K='mf_datos',CL='mf_clave',TK='mf_token';
-let DB=JSON.parse(localStorage.getItem(K)||'{"v":{},"prods":{},"sync":null}'),syncing=false;
+let DB=JSON.parse(localStorage.getItem(K)||'{"v":{},"prods":{},"sync":null}'),syncing=false,serverConfigured=false;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const clave=()=>sessionStorage.getItem(CL)||'';
 async function api(path,params){const u=new URL('/api/loyverse',location.origin);u.searchParams.set('path',path);
  Object.entries(params||{}).forEach(([k,v])=>v&&u.searchParams.set(k,v));
- const h={'x-clave':encodeURIComponent(clave())},t=localStorage.getItem(TK);if(t)h['x-token']=encodeURIComponent(t);
+ const h={'x-clave':encodeURIComponent(clave())},t=localStorage.getItem(TK);if(t&&!serverConfigured)h['x-token']=encodeURIComponent(t);
  const r=await fetch(u,{headers:h});
  if(r.status==401)throw new Error('AUTH');
- if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'Error '+r.status)}return r.json()}
+ if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'Error '+r.status)}const data=await r.json();if(path=='/ping')serverConfigured=Boolean(data.loyverseConfigured);return data}
 async function pages(path,key,p){let c,all=[];do{const d=await api(path,{...p,limit:250,cursor:c});all.push(...(d[key]||[]));c=d.cursor}while(c);return all}
 function hidratar(){
  PROD=Object.keys(DB.prods).map((k,i)=>({id:i,key:k,...DB.prods[k]}));const ix={};PROD.forEach(p=>ix[p.key]=p.id);
@@ -117,7 +117,7 @@ function importar(t){const l=t.split('\n')[0],d=(l.match(/;/g)||[]).length>(l.ma
 async function archivo(inp){const f=inp.files[0];if(!f)return;
  try{let t;if(/\.xlsx?$/i.test(f.name)){const w=XLSX.read(await f.arrayBuffer());t=XLSX.utils.sheet_to_csv(w.Sheets[w.SheetNames[0]])}else t=await f.text();importar(t)}
  catch(e){MSG='No se pudo leer el archivo: '+e.message;render()}}
-function arrancar(){hidratar();if(!localStorage.getItem(TK)&&!VENTAS.length)view='Sincronizar Loyverse';render();sincronizar(false)}
+function arrancar(){hidratar();if(!serverConfigured&&!localStorage.getItem(TK)&&!VENTAS.length)view='Sincronizar Loyverse';render();sincronizar(false)}
 async function iniciar(){localStorage.removeItem(CL);if(!clave())return login();try{await api('/ping');arrancar()}catch(e){salir()}}
 // ===== Utilidades =====
 const S=x=>'S/ '+x.toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -194,9 +194,7 @@ Reportes(){const vs=sel(P.k);if(!vs.length)return '<h1>Reportes</h1>'+period()+n
  <div class="card wrap"><h2>Resumen contable por día</h2><table><tr><th>Fecha</th><th>Recibos</th><th>${P.metric=='paid'?'Total cobrado':'Ventas netas'} del día</th></tr>${Object.keys(dt).sort().map(k=>`<tr><td>${fechaCompleta(Core.dayStart(k))}</td><td>${dn[k]}</td><td>${S(dt[k])}</td></tr>`).join('')}<tr><td><b>Suma total</b></td><td><b>${t}</b></td><td><b>${S(tt)}</b></td></tr></table></div></div>`},
 'Sincronizar Loyverse'(){const tk=localStorage.getItem(TK);return `<h1>Datos de Loyverse</h1><p class="sub">Conecta la API de Loyverse o sube un archivo exportado.</p>
  <div class="grid g2"><div class="card"><h2>1. Conexión por API</h2>
- <p class="k">${tk?'✔ Token guardado en este dispositivo.':'Pega el token de acceso de Loyverse. Se guarda solo en este dispositivo.'}</p>
- <p><input type="password" id="tk" placeholder="${tk?'Reemplazar token':'Token de Loyverse'}" style="width:100%"></p>
- <div class="bar"><button class="btn" onclick="guardarToken()">Guardar y sincronizar</button>${tk?'<button class="pill" onclick="quitarToken()">Quitar token</button>':''}</div>
+ ${serverConfigured?'<div class="notice">✔ Loyverse configurado para todos tus dispositivos. Abre este mismo enlace en tu laptop o tablet e inicia sesión; no necesitas volver a pegar el token.</div>':`<p class="k">${tk?'✔ Token guardado en este dispositivo.':'Pega el token de acceso de Loyverse. Se guarda solo en este dispositivo.'}</p><p class="k">Para usarlo también en otros dispositivos, configura LOYVERSE_TOKEN en el servidor.</p><p><input type="password" id="tk" placeholder="${tk?'Reemplazar token':'Token de Loyverse'}" style="width:100%"></p><div class="bar"><button class="btn" onclick="guardarToken()">Guardar y sincronizar</button>${tk?'<button class="pill" onclick="quitarToken()">Quitar token</button>':''}</div>`}
  <div class="bar"><button class="pill" onclick="sincronizar(true)">Sincronizar ahora</button><label>Historial desde <input type="date" id="hd"></label><button class="pill" onclick="cargarHist()">Cargar historial</button></div></div>
  <div class="card"><h2>2. Subir archivo manualmente</h2><p class="k">CSV o Excel exportado desde Loyverse. Las ventas ya guardadas no se duplican.</p><p><input type="file" accept=".csv,.xlsx,.xls" onchange="archivo(this)"></p></div></div>
  <div class="card"><p>Última actualización: <b>${DB.sync?new Date(DB.sync).toLocaleString('es-PE'):'nunca'}</b> · Ventas guardadas: <b>${VENTAS.length}</b></p>

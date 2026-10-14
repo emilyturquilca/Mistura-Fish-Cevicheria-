@@ -205,3 +205,12 @@ test('history loads and file imports never advance the API sync cursor', async (
   assert.equal(vm.runInContext('DB.v.F1.total', context), -20);
   assert.equal(vm.runInContext('DB.v.F1.type', context), 'REFUND');
 });
+
+test('sync module shows server configuration without asking each device to save the token', () => {
+  const context = app();
+  vm.runInContext('serverConfigured=true', context);
+  const html = vm.runInContext("V['Sincronizar Loyverse']()", context);
+  assert.match(html, /Loyverse configurado para todos tus dispositivos/);
+  assert.ok(!html.includes('id="tk"'));
+  assert.ok(!html.includes('Guardar y sincronizar'));
+});
