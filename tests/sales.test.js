@@ -225,3 +225,25 @@ test('old stored archives do not cause a recent sync to request history outside 
   assert.equal(vm.runInContext('DB.v.archive.total', context), 50);
   assert.ok(!vm.runInContext('MSG', context).includes('PAYMENT_REQUIRED'));
 });
+
+test('rapid renders and view changes discard stale chart callbacks before they reuse a canvas', () => {
+  const context = app();
+  vm.runInContext(`
+    globalThis.pendingDraws=[];globalThis.chartInstances=[];
+    setTimeout=draw=>pendingDraws.push(draw);
+    globalThis.getComputedStyle=()=>({getPropertyValue:key=>key=='--ink'?'#0d2b3e':'#dbe8ee'});
+    globalThis.Chart=class {
+      constructor(canvas,config){
+        if(chartInstances.some(chart=>chart.canvas===canvas&&!chart.destroyed))throw new Error('Canvas already in use');
+        this.canvas=canvas;this.config=config;chartInstances.push(this);
+      }
+      destroy(){this.destroyed=true}
+    };
+    DB={v:{},prods:{}};Core.mergeReceipts(DB,[${JSON.stringify(receipt('chart-sale', { receipt_date: new Date().toISOString() }))}]);hidratar();
+    view='Dashboard';render();render();view='Rentabilidad';render();
+    pendingDraws.forEach(draw=>draw());
+  `, context);
+  assert.equal(context.chartInstances.length, 1);
+  assert.equal(context.chartInstances[0].config.type, 'bar');
+  assert.equal(context.chartInstances[0].config.options.indexAxis, 'y');
+});

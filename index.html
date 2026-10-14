@@ -131,7 +131,7 @@ function sel(k){const interval=range(k);return VENTAS.filter(v=>Core.inRange(v,i
 function group(arr,keyFn,valFn){const m={};arr.forEach(x=>{const k=keyFn(x);m[k]=(m[k]||0)+valFn(x)});return m}
 function lines(vs){return vs.flatMap(v=>v.items.map(i=>({...i,pr:PROD[i.p],v})))}
 const P={k:'hoy',day:Core.dateKey(),metric:'net',from:Core.shiftDay(Core.dateKey(),-7),to:Core.dateKey()};
-let view='Dashboard',charts=[],q='',fp='',openId=null,step=0,lastImport=null;
+let view='Dashboard',charts=[],renderRevision=0,q='',fp='',openId=null,step=0,lastImport=null;
 const MENU=['Dashboard','Ventas','Productos','Clientes','Rentabilidad','Reportes','Sincronizar Loyverse','Configuración'];
 function nav(){const n=document.getElementById('nav');n.querySelectorAll('button').forEach(b=>b.remove());
  MENU.forEach(m=>{const b=document.createElement('button');b.textContent=m;b.className=m==view?'on':'';b.onclick=()=>{view=m;openId=null;render()};n.appendChild(b)})}
@@ -148,6 +148,7 @@ function period(){const actual=Core.dateKey(),day=P.k=='hoy'?actual:P.day;
  ${P.k=='custom'&&P.from>P.to?'<div class="notice">La fecha inicial debe ser anterior o igual a la final.</div>':''}`}
 function resumen(vs){const t=Core.totals(vs);
  return `<div class="grid">${[['Ventas brutas',S(t.gross)],['Devoluciones (antes de descuentos)',S(t.refunds)],['Descuentos netos',S(t.discounts)],['Ventas netas',S(t.net)],['Total cobrado menos devoluciones',S(t.paid)],['Beneficio bruto',t.profit==null?'Información no disponible':S(t.profit)]].map(([label,value])=>`<div class="card"><div class="k">${label}</div><div class="v s">${value}</div></div>`).join('')}</div><p class="k">Ventas netas = ventas brutas − devoluciones − descuentos netos. Beneficio bruto = ventas netas − costo de productos del recibo.</p>${t.legacy?'<div class="notice">Hay recibos antiguos o de archivo sin desglose de importes. Sus totales son provisionales: sincroniza Loyverse para comparar ventas netas, impuestos y costos.</div>':''}`}
+function deferCharts(draw){const revision=renderRevision;setTimeout(()=>{if(revision===renderRevision)draw()},0)}
 function chart(id,type,labels,data,label,extra={}){const c=document.getElementById(id);if(!c)return;
  const cols=['#0e7c9b','#19b5b0','#f08a4b','#7fc8e0','#0b2a40','#9adbd6'];
  const style=getComputedStyle(document.documentElement),ink=style.getPropertyValue('--ink').trim(),line=style.getPropertyValue('--line').trim();
@@ -162,7 +163,7 @@ Dashboard(){const vs=sel(P.k),mes=sel('mes');
  const L=lines(vs),byP=group(L,x=>x.pr.n,x=>x.q),byC=group(L,x=>x.pr.c,x=>x.t),byM=group(vs,v=>v.pay,v=>1);
  const top=(o)=>Object.entries(o).sort((a,b)=>b[1]-a[1])[0]?.[0]||'Sin datos';
  const byD=group(vs,v=>Core.dateKey(v.f),v=>v.total);
- setTimeout(()=>{chart('c1','line',Object.keys(byD).map(k=>D(Core.dayStart(k))),Object.values(byD),'Ventas S/');chart('c2','bar',Object.keys(byC),Object.values(byC),'S/');chart('c3','doughnut',Object.keys(byM),Object.values(byM),'Ventas');
+ deferCharts(()=>{chart('c1','line',Object.keys(byD).map(k=>D(Core.dayStart(k))),Object.values(byD),'Ventas S/');chart('c2','bar',Object.keys(byC),Object.values(byC),'S/');chart('c3','doughnut',Object.keys(byM),Object.values(byM),'Ventas');
   const tp=Object.entries(byP).sort((a,b)=>b[1]-a[1]).slice(0,5);chart('c4','bar',tp.map(x=>x[0]),tp.map(x=>x[1]),'Unidades',{indexAxis:'y'})});
  return `<h1>Dashboard</h1><p class="sub">Resumen del negocio con datos de Loyverse</p>${period()}
  <div class="grid">${[[P.metric=='paid'?'Total cobrado (período)':'Ventas netas (período)',S(sum(vs.map(v=>v.total)))],['Total del mes actual',S(sum(mes.map(v=>v.total)))],['Ventas / devoluciones (período)',`${vs.filter(v=>v.type!='REFUND').length} / ${vs.filter(v=>v.type=='REFUND').length}`],['Ticket promedio de ventas',S(sum(vs.filter(v=>v.type!='REFUND').map(v=>v.total))/(vs.filter(v=>v.type!='REFUND').length||1))]].map(a=>`<div class="card"><div class="k">${a[0]}</div><div class="v">${a[1]}</div></div>`).join('')}</div>
@@ -186,7 +187,7 @@ Clientes(){const m={};VENTAS.forEach(v=>{if(v.cli=='Consumidor final')return;con
  return `<h1>Clientes</h1><p class="sub">Comportamiento de los clientes registrados</p><div class="grid">${[['Total de clientes',a.length],['Clientes nuevos (30 días)',a.filter(c=>c.p>=lim).length],['Frecuentes (10+ compras)',a.filter(c=>c.c>=10).length]].map(x=>`<div class="card"><div class="k">${x[0]}</div><div class="v">${x[1]}</div></div>`).join('')}</div>
  <div class="card wrap"><h2>Ranking de clientes frecuentes</h2><table><tr><th>#</th><th>Nombre</th><th>Compras</th><th>Total gastado</th><th>Última compra</th></tr>${a.map((c,i)=>`<tr><td>${i+1}</td><td>${esc(c.n)}</td><td>${c.c}</td><td>${S(c.t)}</td><td>${D(c.u)}</td></tr>`).join('')}</table></div>`},
 Rentabilidad(){const r=PROD.filter(p=>p.k!=null).map(p=>({...p,m:p.p-p.k,pc:(p.p-p.k)/p.p*100})).sort((a,b)=>b.pc-a.pc),sin=PROD.filter(p=>p.k==null);
- setTimeout(()=>chart('c1','bar',r.map(x=>x.n),r.map(x=>+x.pc.toFixed(1)),'Margen %',{indexAxis:'y'}));
+ deferCharts(()=>chart('c1','bar',r.map(x=>x.n),r.map(x=>+x.pc.toFixed(1)),'Margen %',{indexAxis:'y'}));
  return `<h1>Rentabilidad</h1><p class="sub">Margen = Precio − Coste · Margen % = (Precio − Coste) / Precio × 100. Módulo complementario: no modifica los demás reportes.</p>
  <div class="grid g2"><div class="card"><h2>Margen % por producto (mayor a menor)</h2><canvas id="c1"></canvas></div><div class="card wrap"><table><tr><th>Producto</th><th>Precio</th><th>Coste</th><th>Margen S/</th><th>Margen %</th></tr>${r.map(x=>`<tr><td class="product-name">${esc(x.n)}</td><td>${S(x.p)}</td><td>${S(x.k)}</td><td>${S(x.m)}</td><td>${x.pc.toFixed(1)}%</td></tr>`).join('')}${sin.map(x=>`<tr><td class="product-name">${esc(x.n)}</td><td>${S(x.p)}</td><td colspan="3" class="na">Sin información de coste</td></tr>`).join('')}</table></div></div>`},
 Reportes(){const vs=sel(P.k);if(!vs.length)return '<h1>Reportes</h1>'+period()+noData;const m=group(vs,v=>v.pay,v=>1),t=vs.length,mt=group(vs,v=>v.pay,v=>v.total),dn=group(vs,v=>Core.dateKey(v.f),v=>1),dt=group(vs,v=>Core.dateKey(v.f),v=>v.total),tt=sum(vs.map(v=>v.total));
@@ -228,7 +229,7 @@ function exportExcel(filtrar=false){
 }
 function exportCSV(){const csv=Core.csv(Core.reportRows(ventasExportar(false))),a=document.createElement('a'),url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
  a.href=url;a.download=nombreReporte('csv');document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-function render(keep){charts.forEach(c=>c.destroy());charts=[];nav();const f=document.activeElement;const pos=f&&f.selectionStart;
+function render(keep){renderRevision++;charts.forEach(c=>c.destroy());charts=[];nav();const f=document.activeElement;const pos=f&&f.selectionStart;
  document.getElementById('app').innerHTML='<div class="demo">'+esc(MSG||(DB.sync?'Última sincronización: '+new Date(DB.sync).toLocaleString('es-PE'):'Sin sincronizar'))+'</div>'+V[view]();
  if(keep){const i=document.querySelector('input[placeholder]');if(i){i.focus();i.setSelectionRange(pos,pos)}}}
 iniciar();
