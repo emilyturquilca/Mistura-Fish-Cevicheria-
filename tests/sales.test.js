@@ -136,9 +136,11 @@ function app() {
   vm.runInContext(readFileSync(new URL('../operations-core.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../operations-edit-core.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../restaurant-core.js', import.meta.url), 'utf8'), context);
+  vm.runInContext(readFileSync(new URL('../payables-core.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../operations-ui.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../operations-edit-ui.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../restaurant-ui.js', import.meta.url), 'utf8'), context);
+  vm.runInContext(readFileSync(new URL('../payables-ui.js', import.meta.url), 'utf8'), context);
   if (existsSync(new URL('../assets/xlsx.full.min.js', import.meta.url))) {
     vm.runInContext(readFileSync(new URL('../assets/xlsx.full.min.js', import.meta.url), 'utf8'), context);
   }
@@ -155,7 +157,7 @@ test('all UI views render, daily navigation updates the chosen total, and labels
   assert.match(vm.runInContext('V.Dashboard()', context), /Ventas netas \(período\)/);
   assert.match(vm.runInContext('V.Ventas()', context), /12\/10\/2026/);
   assert.match(vm.runInContext('V.Reportes()', context), /Exportar Excel \(.xlsx\)/);
-  for (const view of ['Compras', 'Proveedores', 'Recepción', 'Inventario', 'Reservaciones', 'Ventas por hora', 'Mermas', 'Escandallos', 'Productos', 'Rentabilidad', 'Sincronizar Loyverse', 'Papelera', 'Configuración']) {
+  for (const view of ['Compras', 'Proveedores', 'Cuentas por pagar', 'Recepción', 'Inventario', 'Reservaciones', 'Ventas por hora', 'Mermas', 'Escandallos', 'Productos', 'Rentabilidad', 'Sincronizar Loyverse', 'Papelera', 'Configuración']) {
     assert.equal(typeof vm.runInContext(`V[${JSON.stringify(view)}]()`, context), 'string');
   }
   vm.runInContext('moverDia(-1)', context);
@@ -174,6 +176,22 @@ test('Hourly Excel preserves the selected day and numeric amounts in all 24 hour
   assert.match(context.exported.name,/ventas-por-hora-.*2026-10-12-a-2026-10-12\.xlsx$/);
   assert.equal(context.rows.slice(1).reduce((n,r)=>n+r[6],0),100);
   assert.ok(context.rows.slice(1).every(r=>typeof r[6]==='number'));
+});
+
+test('Supplier profiles render linked purchases, goods and accounts with escaped notes',()=>{
+  const context=app();
+  vm.runInContext(`
+    const command=(id,type,payload)=>{OPS.state=OpsCore.apply(OPS.state,{id,type,payload}).state};
+    command('supplier','supplier',{name:'Proveedor ficticio',paymentMode:'Crédito',creditDays:7,paymentNotes:'<script>dato</script>'});
+    command('ingredient','ingredient',{name:'Insumo ficticio',unit:'kg',supplierId:'supplier',stock:0,unitCost:0});
+    command('order','order',{supplierId:'supplier',date:Core.dateKey(),lines:[{ingredientId:'ingredient',quantity:2,unit:'kg',unitCost:10}]});
+    command('receipt','receive',{orderId:'order',date:Core.dateKey(),reference:'GUIA FICTICIA',lines:[{lineId:'order/0',quantity:1,unitCost:10}]});
+    supplierProfile='supplier';
+  `,context);
+  const profile=vm.runInContext('V.Proveedores()',context);
+  for(const label of ['Historial de compras','Insumos que suministra','Deudas y vencimientos','GUIA FICTICIA','Registrar abono'])assert.ok(profile.includes(label));
+  assert.ok(profile.includes('&lt;script&gt;dato&lt;/script&gt;'));assert.ok(!profile.includes('<script>dato'));
+  assert.match(vm.runInContext("V['Cuentas por pagar']()",context),/Saldo pendiente confirmado/);
 });
 
 test('Excel export creates a readable workbook with numeric totals and matching filters', () => {

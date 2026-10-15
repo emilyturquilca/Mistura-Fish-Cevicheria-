@@ -12,6 +12,20 @@ Primera versión: compras, proveedores, inventario, mermas, escandallos, rentabi
 6. **Mermas** registra pérdidas físicas de insumos y resta stock. Si un plato ya vendido se devuelve y se descarta, usa **Registrar plato devuelto**: registra su costo como pérdida sin descontar otra vez los ingredientes. La devolución financiera por sí sola no confirma que se haya descartado comida.
 7. **Rentabilidad** separa beneficio histórico de los recibos y margen teórico de las recetas con costos actuales. Los costos desconocidos se indican; el margen no incluye gastos operativos. **Ventas por hora** agrupa los recibos del período seleccionado por hora local y permite exportar un Excel numérico de las 24 horas.
 
+## Proveedores y cuentas por pagar · primera etapa
+
+En **Proveedores → Ver ficha** se consultan condiciones, historial de compras, cantidades recibidas, insumos suministrados, último costo recibido, cuentas y abonos. El historial combina los insumos asignados en Inventario con las recepciones reales. Una compra solicitada no es todavía una deuda: cada recepción genera una cuenta por su importe real, incluso cuando la entrega es parcial.
+
+Cada proveedor admite **Contado** o **Crédito** con días de plazo y condiciones adicionales. Las recepciones proponen ese acuerdo y permiten confirmar el vencimiento. Contado vence el día de recepción, pero no se marca pagado automáticamente. Cambiar las condiciones generales del proveedor solo afecta propuestas futuras, sin mover los vencimientos ya acordados.
+
+**Cuentas por pagar** muestra saldo pendiente, vencido y abonos, con filtros de proveedor y estado. **Registrar abono** anota un pago ya realizado, su fecha, medio y referencia; no transfiere dinero. Los abonos reducen la deuda sin modificar el inventario. No admite anticipos antes de recibir mercadería, excedentes sobre una cuenta ni importes con más de dos decimales. Los importes son en soles.
+
+Las recepciones anteriores sin condiciones de pago aparecen **Por confirmar** y quedan fuera del saldo pendiente hasta revisarlas. Confirma el acuerdo y registra los pagos que ya se hicieron; el sistema no puede conocer pagos anteriores que no registraste. **Registrar deuda anterior** permite incorporar solo un saldo pendiente previo que no exista ya en Compras; no agrega stock. Se evita duplicar su referencia dentro del proveedor o con una recepción existente.
+
+Las condiciones, deudas anteriores y abonos pueden editarse. Los abonos y deudas manuales admiten eliminación recuperable con Deshacer. Antes de eliminar una cuenta, recepción o compra con abonos, corrige o elimina esos abonos: así no quedan pagos sin vínculo. Corregir cantidades o costos recibidos recalcula automáticamente la cuenta; se bloquea si el nuevo importe quedaría por debajo de lo ya abonado. Todas las escrituras usan la misma base compartida y control de versión.
+
+La evaluación de puntualidad, calidad, cumplimiento de cantidades y variación de precios corresponde a la siguiente etapa. Esta entrega muestra el último costo recibido y las cantidades, sin inventar calificaciones de desempeño.
+
 ## Consumo automático y devoluciones
 
 Al sincronizar Loyverse, las ventas con receta configurada descuentan sus ingredientes una sola vez. Se activa desde el primer guardado o sincronización con esta versión; no descuenta ventas anteriores a la activación ni anteriores a la creación de su receta. Verifica el stock físico al empezar. Los cambios de receta se aplican a ventas posteriores, conservando la fórmula de las anteriores. Las ventas sin receta se señalan sin inventar consumos.
@@ -51,6 +65,7 @@ Vuelve a desplegar tras agregar variables. La API crea su tabla al primer acceso
 | operations-core.js / operations-edit-core.js | Compras, recepción, costos y recálculo del inventario |
 | restaurant-core.js | Consumo por receta y recibo, reservaciones, capacidad y mermas de platos |
 | restaurant-ui.js | Inventario simplificado, reservaciones y ventas por hora |
+| payables-core.js / payables-ui.js | Fichas de proveedor, condiciones, cuentas, vencimientos y abonos |
 | api/operations.js | Escrituras autorizadas con control de versión |
 | api/sync-sales.js | Sincronización de Loyverse y consumo hacia PostgreSQL |
 | api/loyverse.js | Proxy de consulta y comprobación de conexión |

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import '../sales-core.js';import '../operations-core.js';import '../operations-edit-core.js';import '../restaurant-core.js';
+import '../payables-core.js';
 const O=globalThis.MisturaOperations,R=globalThis.MisturaRestaurant,C=globalThis.MisturaCore;
 const at=minute=>'2026-10-15T15:'+String(minute).padStart(2,'0')+':00Z';
 function setup(stock=10){

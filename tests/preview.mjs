@@ -5,6 +5,7 @@ import '../sales-core.js';
 import '../operations-core.js';
 import '../operations-edit-core.js';
 import '../restaurant-core.js';
+import '../payables-core.js';
 
 const root = new URL('../', import.meta.url);
 const today = globalThis.MisturaCore.dateKey();
@@ -67,7 +68,7 @@ const server = createServer(async (request, response) => {
     response.end(JSON.stringify(data || { error: 'Not found' }));
     return;
   }
-  const files = { '/': 'index.html', '/dark': 'index.html', '/index.html': 'index.html', '/sales-core.js': 'sales-core.js', '/operations-core.js': 'operations-core.js', '/operations-edit-core.js':'operations-edit-core.js','/restaurant-core.js':'restaurant-core.js','/restaurant-ui.js':'restaurant-ui.js', '/operations-edit-ui.js':'operations-edit-ui.js', '/operations-ui.js': 'operations-ui.js', '/assets/xlsx.full.min.js': 'assets/xlsx.full.min.js' };
+  const files = { '/': 'index.html', '/dark': 'index.html', '/index.html': 'index.html', '/sales-core.js': 'sales-core.js', '/operations-core.js': 'operations-core.js', '/operations-edit-core.js':'operations-edit-core.js','/restaurant-core.js':'restaurant-core.js','/restaurant-ui.js':'restaurant-ui.js', '/payables-core.js':'payables-core.js', '/payables-ui.js':'payables-ui.js', '/operations-edit-ui.js':'operations-edit-ui.js', '/operations-ui.js': 'operations-ui.js', '/assets/xlsx.full.min.js': 'assets/xlsx.full.min.js' };
   const file = files[url.pathname];
   if (!file) { response.writeHead(404); response.end(); return; }
   try {
