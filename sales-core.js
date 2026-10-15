@@ -120,11 +120,22 @@
     rows.push(['TOTAL', '', '', '', '', round(t.gross - t.refunds), t.discounts, t.legacy ? null : t.net, t.addedTax, t.tip, t.surcharge, t.paid, t.profit == null ? null : t.cost, t.profit]);
     return rows;
   }
+  function hourly(receipts) {
+    const buckets=Array.from({length:24},(_,hour)=>({hour,label:String(hour).padStart(2,'0')+':00',gross:0,refunds:0,discounts:0,net:0,paid:0,sales:0,returns:0}));
+    const formatter=new Intl.DateTimeFormat('en-GB',{timeZone:TIME_ZONE,hour:'2-digit',hourCycle:'h23'});
+    for(const receipt of receipts){
+      const date=new Date(receipt.f);if(Number.isNaN(date.getTime()))continue;
+      const bucket=buckets[Number(formatter.format(date))],t=totals([receipt]);
+      for(const key of ['gross','refunds','discounts','net','paid','sales','returns'])bucket[key]+=t[key];
+    }
+    for(const bucket of buckets)for(const key of ['gross','refunds','discounts','net','paid'])bucket[key]=round(bucket[key]);
+    return buckets;
+  }
   function csv(rows) {
     return '\ufeff' + rows.map(row => row.map(value => {
       const text = typeof value === 'string' && /^\s*[=+@-]/.test(value) ? "'" + value : String(value ?? '');
       return '"' + text.replaceAll('"', '""') + '"';
     }).join(',')).join('\r\n');
   }
-  globalThis.MisturaCore = { TIME_ZONE, round, dateKey, dayStart, shiftDay, dateRange, inRange, parseDate, normalizeReceipt, mergeReceipts, totals, reportRows, csv };
+  globalThis.MisturaCore = { TIME_ZONE, round, dateKey, dayStart, shiftDay, dateRange, inRange, parseDate, normalizeReceipt, mergeReceipts, totals, reportRows, hourly, csv };
 })();

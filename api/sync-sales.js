@@ -49,6 +49,7 @@ export async function POST(request) {
       sales.cancelledIds ||= {};
       for(const receipt of receipts){if(!receipt.receipt_number)continue;if(receipt.cancelled_at)sales.cancelledIds[receipt.receipt_number]=receipt.cancelled_at;else delete sales.cancelledIds[receipt.receipt_number]}
       sales.sync = started; sales.apiSync = started; sales.apiVersion = 3;
+      globalThis.MisturaRestaurant.reconcile(state,started);
       const version = await save(state, current.version);
       if (version != null) return json({ configured: true, state, version, counts });
     } catch (e) { return error(e); }

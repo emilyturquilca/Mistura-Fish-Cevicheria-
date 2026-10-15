@@ -2,6 +2,7 @@ import { neon } from '@neondatabase/serverless';
 import '../sales-core.js';
 import '../operations-core.js';
 import '../operations-edit-core.js';
+import '../restaurant-core.js';
 
 const O = globalThis.MisturaOperations;
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
