@@ -134,7 +134,9 @@ function app() {
   });
   vm.runInContext(readFileSync(new URL('../sales-core.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../operations-core.js', import.meta.url), 'utf8'), context);
+  vm.runInContext(readFileSync(new URL('../operations-edit-core.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../operations-ui.js', import.meta.url), 'utf8'), context);
+  vm.runInContext(readFileSync(new URL('../operations-edit-ui.js', import.meta.url), 'utf8'), context);
   if (existsSync(new URL('../assets/xlsx.full.min.js', import.meta.url))) {
     vm.runInContext(readFileSync(new URL('../assets/xlsx.full.min.js', import.meta.url), 'utf8'), context);
   }
@@ -151,7 +153,7 @@ test('all UI views render, daily navigation updates the chosen total, and labels
   assert.match(vm.runInContext('V.Dashboard()', context), /Ventas netas \(período\)/);
   assert.match(vm.runInContext('V.Ventas()', context), /12\/10\/2026/);
   assert.match(vm.runInContext('V.Reportes()', context), /Exportar Excel \(.xlsx\)/);
-  for (const view of ['Compras', 'Proveedores', 'Recepción', 'Inventario', 'Mermas', 'Escandallos', 'Productos', 'Rentabilidad', 'Sincronizar Loyverse', 'Configuración']) {
+  for (const view of ['Compras', 'Proveedores', 'Recepción', 'Inventario', 'Mermas', 'Escandallos', 'Productos', 'Rentabilidad', 'Sincronizar Loyverse', 'Papelera', 'Configuración']) {
     assert.equal(typeof vm.runInContext(`V[${JSON.stringify(view)}]()`, context), 'string');
   }
   vm.runInContext('moverDia(-1)', context);
