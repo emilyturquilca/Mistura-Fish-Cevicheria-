@@ -4,6 +4,7 @@ import '../sales-core.js';
 import '../operations-core.js';
 import '../operations-edit-core.js';
 import '../restaurant-core.js';
+import '../payables-core.js';
 import { GET, POST } from '../api/operations.js';
 
 const O = globalThis.MisturaOperations;

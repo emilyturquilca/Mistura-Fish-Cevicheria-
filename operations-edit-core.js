@@ -1,8 +1,8 @@
 // Editing/deletion rules shared by the server and the deletion preview.
 (() => {
-  const collections = ['suppliers', 'ingredients', 'orders', 'receptions', 'movements', 'recipes','reservations','preparedWastes'];
+  const collections = ['suppliers', 'ingredients', 'orders', 'receptions', 'movements', 'recipes','reservations','preparedWastes','supplierDebts','supplierPayments'];
   function prepare(s) {
-    s.reservations ||= [];s.preparedWastes ||= [];
+    s.reservations ||= [];s.preparedWastes ||= [];s.supplierDebts ||= [];s.supplierPayments ||= [];
     const balances = {};
     for (const m of s.movements) {
       const before = balances[m.ingredientId] || 0;
@@ -70,12 +70,16 @@
     }
     for (const ingredient of s.ingredients) ingredient.cost = costs[ingredient.id] ?? null;
     for (const recipe of s.recipes) for (const line of recipe.lines) find(s.ingredients, line.ingredientId, 'Insumo de la receta');
+    globalThis.MisturaPayables?.validate(s,{fail,find});
   }
   function deletion(s, entity, targetId, { fail, find }) {
     if (!collections.includes(entity)) fail('Registro no eliminable.');
     const target = find(s[entity], targetId, 'Registro'), bundle = Object.fromEntries(collections.map(c => [c, []]));
     if (entity === 'suppliers' && s.orders.some(o => o.supplierId === targetId)) fail('Este proveedor tiene compras. Reasigna o elimina esas compras antes de eliminar el proveedor.');
     if (entity === 'suppliers' && s.ingredients.some(i => i.supplierId === targetId)) fail('Este proveedor está asignado a insumos. Cambia su proveedor desde Inventario antes de eliminarlo.');
+    if(entity==='suppliers'&&s.supplierDebts.some(d=>d.supplierId===targetId))fail('Este proveedor tiene deudas anteriores registradas. Corrígelas o elimínalas primero.');
+    const accountIds=entity==='supplierDebts'?['debt/'+targetId]:entity==='receptions'?['reception/'+targetId]:entity==='orders'?s.receptions.filter(r=>r.orderId===targetId).map(r=>'reception/'+r.id):[];
+    if(s.supplierPayments.some(p=>accountIds.includes(p.accountId)))fail('Esta cuenta tiene abonos. Corrige o elimina sus abonos antes de eliminar la deuda o la compra.');
     if (entity === 'ingredients' && (s.orders.some(o => o.lines.some(l => l.ingredientId === targetId)) || s.movements.some(m => m.ingredientId === targetId&&m.kind==='Venta') || s.recipes.some(r => r.lines.some(l => l.ingredientId === targetId)))) fail('Este insumo tiene compras, ventas o recetas. Corrige o elimina los registros relacionados antes de eliminar el insumo.');
     if(entity==='movements'&&target.kind==='Venta')fail('El consumo viene de Loyverse. Corrige el stock físico desde Inventario.');
     if (entity === 'movements' && target.kind === 'Recepción') return deletion(s, 'receptions', target.receptionId, { fail, find });

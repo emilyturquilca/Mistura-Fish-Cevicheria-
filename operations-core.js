@@ -43,7 +43,7 @@
     const movement = (ingredient, quantity, kind, extra = {}) => {
       s.movements.push({ id: key('/' + s.movements.length), ingredientId: ingredient.id, quantity: round(quantity), unitCost: ingredient.cost, kind, date: day(), postedAt: now, ...extra });
     };
-    if (globalThis.MisturaRestaurant?.apply(s,command,now,{fail,text,num,find,date,unitQuantity,round}) || globalThis.MisturaEdits.apply(s, command, now, { fail, text, num, find, date, unitQuantity, round })) {
+    if (globalThis.MisturaPayables?.apply(s,command,now,{fail,text,num,find,date,unitQuantity,round}) || globalThis.MisturaRestaurant?.apply(s,command,now,{fail,text,num,find,date,unitQuantity,round}) || globalThis.MisturaEdits.apply(s, command, now, { fail, text, num, find, date, unitQuantity, round })) {
       // Edited and restored records are validated by the ledger replay below.
     } else if (command.type === 'supplier') {
       const name = text(p.name, 'Proveedor');
@@ -142,6 +142,7 @@
       if (old) Object.assign(old, recipe); else s.recipes.push(recipe);
     } else fail('Operación no permitida.');
     globalThis.MisturaRestaurant?.after(s,current,command,now,{fail,text,num,find,date,unitQuantity,round});
+    globalThis.MisturaPayables?.after(s,current,command,now,{fail,text,num,find,date,unitQuantity,round});
     globalThis.MisturaEdits.recalculate(s, { fail, find, round });
     s.commands.push({ id, type: command.type, targetId: p.id || p.targetId || null, at: now });
     return { state: s, duplicate: false };
