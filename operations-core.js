@@ -37,12 +37,13 @@
     const s = structuredClone(current), p = command.payload || {}, id = text(command.id, 'Identificador');
     if (s.commands.some(c => c.id === id)) return { state: s, duplicate: true };
     globalThis.MisturaEdits.prepare(s);
+    globalThis.MisturaRestaurant?.prepare(s,now);
     const key = suffix => id + suffix;
     const day = () => date(p.date, now);
     const movement = (ingredient, quantity, kind, extra = {}) => {
       s.movements.push({ id: key('/' + s.movements.length), ingredientId: ingredient.id, quantity: round(quantity), unitCost: ingredient.cost, kind, date: day(), postedAt: now, ...extra });
     };
-    if (globalThis.MisturaEdits.apply(s, command, now, { fail, text, num, find, date, unitQuantity, round })) {
+    if (globalThis.MisturaRestaurant?.apply(s,command,now,{fail,text,num,find,date,unitQuantity,round}) || globalThis.MisturaEdits.apply(s, command, now, { fail, text, num, find, date, unitQuantity, round })) {
       // Edited and restored records are validated by the ledger replay below.
     } else if (command.type === 'supplier') {
       const name = text(p.name, 'Proveedor');
@@ -54,10 +55,20 @@
       const name = text(p.name, 'Insumo');
       if (!['kg', 'l', 'un'].includes(p.unit)) fail('Unidad base inválida.');
       if (s.ingredients.some(x => x.id !== p.id && x.name.toLocaleLowerCase() === name.toLocaleLowerCase())) fail('Ya existe ese insumo.');
-      const item = { name, unit: p.unit, minimum: num(p.minimum, 'Stock mínimo', true) };
+      const previous=s.ingredients.find(i=>i.id===p.id);
+      let supplierId=p.supplierId ?? previous?.supplierId ?? '';
+      if(p.newSupplierName){
+        const supplierName=text(p.newSupplierName,'Proveedor');
+        let supplier=s.suppliers.find(x=>x.name.toLocaleLowerCase()===supplierName.toLocaleLowerCase());
+        if(!supplier){supplier={id:id+'/supplier',name:supplierName,taxId:'',contact:'',phone:''};s.suppliers.push(supplier)}
+        supplierId=supplier.id;
+      }
+      if(supplierId)find(s.suppliers,supplierId,'Proveedor');
+      const category=p.category==='__new__'?text(p.newCategoryName,'Nueva categoría'):text(p.category||previous?.category||'Sin categoría','Categoría');
+      const item = { name, unit: p.unit, category,supplierId, minimum: num(p.minimum ?? previous?.minimum ?? 0, 'Stock mínimo', true) };
       if (p.id) {
         const old = find(s.ingredients, p.id, 'Insumo');
-        if (old.unit !== p.unit && (s.movements.some(m => m.ingredientId === old.id) || s.orders.some(o => o.lines.some(l => l.ingredientId === old.id)) || s.recipes.some(r => r.lines.some(l => l.ingredientId === old.id)))) fail('La unidad base de un insumo utilizado no puede cambiar. Corrige primero sus compras, movimientos y recetas.');
+        if (old.unit !== p.unit && (s.movements.some(m => m.ingredientId === old.id&&(m.kind!=='Stock'||m.countedQuantity>0)) || s.orders.some(o => o.lines.some(l => l.ingredientId === old.id)) || s.recipes.some(r => r.lines.some(l => l.ingredientId === old.id)))) fail('La unidad base de un insumo utilizado no puede cambiar. Corrige primero sus compras, movimientos y recetas.');
         Object.assign(old, item, { updatedAt: now });
       } else s.ingredients.push({ id, ...item, cost: null });
     } else if (command.type === 'order') {
@@ -91,7 +102,7 @@
         const unitCost = num(item.unitCost, 'Costo recibido por unidad base', true), oldStock = stock(s, ingredient.id);
         const lot = text(item.lot, 'Lote', true), expiry = text(item.expiry, 'Vencimiento', true);
         if (expiry && (!/^\d{4}-\d{2}-\d{2}$/.test(expiry) || new Date(expiry + 'T12:00:00Z').toISOString().slice(0, 10) !== expiry || expiry < p.date)) fail('Vencimiento inválido o anterior a la recepción.');
-        ingredient.cost = round(((oldStock * (ingredient.cost || 0)) + quantity * unitCost) / (oldStock + quantity), 6);
+        ingredient.cost = round(((Math.max(0,oldStock) * (ingredient.cost || 0)) + quantity * unitCost) / (Math.max(0,oldStock) + quantity), 6);
         line.received = round(line.received + quantity);
         movement(ingredient, quantity, 'Recepción', { orderId: order.id, receptionId: id, unitCost, lot, expiry, note: text(p.reference, 'Comprobante', true) });
         received.push({ lineId: line.id, ingredientId: ingredient.id, quantity, unitCost, lot, expiry });
@@ -130,6 +141,7 @@
       const recipe = { id: old?.id || id, productKey, portions: num(p.portions, 'Porciones'), lines, updatedAt: now, revision: (old?.revision || 0) + 1 };
       if (old) Object.assign(old, recipe); else s.recipes.push(recipe);
     } else fail('Operación no permitida.');
+    globalThis.MisturaRestaurant?.after(s,current,command,now,{fail,text,num,find,date,unitQuantity,round});
     globalThis.MisturaEdits.recalculate(s, { fail, find, round });
     s.commands.push({ id, type: command.type, targetId: p.id || p.targetId || null, at: now });
     return { state: s, duplicate: false };

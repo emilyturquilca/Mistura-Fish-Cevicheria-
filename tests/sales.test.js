@@ -126,7 +126,7 @@ function app() {
   const element = () => ({ innerHTML: '', querySelectorAll: () => [], appendChild() {}, remove() {}, click() {} });
   const storage = new Map();
   const context = vm.createContext({
-    console, Date, Intl, URL, Blob, structuredClone, setTimeout() {},
+    console, Date, Intl, URL, Blob, structuredClone, setTimeout() {},setInterval() {},
     localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: k => storage.delete(k) },
     sessionStorage: { getItem: () => '', removeItem() {} },
     document: { querySelectorAll: () => [], querySelector: () => null, getElementById: id => { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); }, createElement: element, body: element() },
@@ -135,8 +135,10 @@ function app() {
   vm.runInContext(readFileSync(new URL('../sales-core.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../operations-core.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../operations-edit-core.js', import.meta.url), 'utf8'), context);
+  vm.runInContext(readFileSync(new URL('../restaurant-core.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../operations-ui.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../operations-edit-ui.js', import.meta.url), 'utf8'), context);
+  vm.runInContext(readFileSync(new URL('../restaurant-ui.js', import.meta.url), 'utf8'), context);
   if (existsSync(new URL('../assets/xlsx.full.min.js', import.meta.url))) {
     vm.runInContext(readFileSync(new URL('../assets/xlsx.full.min.js', import.meta.url), 'utf8'), context);
   }
@@ -153,7 +155,7 @@ test('all UI views render, daily navigation updates the chosen total, and labels
   assert.match(vm.runInContext('V.Dashboard()', context), /Ventas netas \(período\)/);
   assert.match(vm.runInContext('V.Ventas()', context), /12\/10\/2026/);
   assert.match(vm.runInContext('V.Reportes()', context), /Exportar Excel \(.xlsx\)/);
-  for (const view of ['Compras', 'Proveedores', 'Recepción', 'Inventario', 'Mermas', 'Escandallos', 'Productos', 'Rentabilidad', 'Sincronizar Loyverse', 'Papelera', 'Configuración']) {
+  for (const view of ['Compras', 'Proveedores', 'Recepción', 'Inventario', 'Reservaciones', 'Ventas por hora', 'Mermas', 'Escandallos', 'Productos', 'Rentabilidad', 'Sincronizar Loyverse', 'Papelera', 'Configuración']) {
     assert.equal(typeof vm.runInContext(`V[${JSON.stringify(view)}]()`, context), 'string');
   }
   vm.runInContext('moverDia(-1)', context);
@@ -163,6 +165,15 @@ test('all UI views render, daily navigation updates the chosen total, and labels
   assert.equal(vm.runInContext('sel(P.k).length', context), 1);
   vm.runInContext("elegirPeriodo('hoy')", context);
   assert.match(vm.runInContext('period()', context), /Hoy ·/);
+});
+
+test('Hourly Excel preserves the selected day and numeric amounts in all 24 hours', () => {
+  const context = app();
+  vm.runInContext(`DB={v:{},prods:{}};Core.mergeReceipts(DB,[${JSON.stringify(receipt('hourly'))}]);hidratar();P.k='dia';P.day='2026-10-12';XLSX.writeFile=(wb,name)=>{globalThis.exported={bytes:XLSX.write(wb,{type:'array',bookType:'xlsx'}),name}};hourlyExport();globalThis.reopened=XLSX.read(exported.bytes,{type:'array'});globalThis.rows=XLSX.utils.sheet_to_json(reopened.Sheets['Por hora'],{header:1});`, context);
+  assert.equal(context.rows.length,25);
+  assert.match(context.exported.name,/ventas-por-hora-.*2026-10-12-a-2026-10-12\.xlsx$/);
+  assert.equal(context.rows.slice(1).reduce((n,r)=>n+r[6],0),100);
+  assert.ok(context.rows.slice(1).every(r=>typeof r[6]==='number'));
 });
 
 test('Excel export creates a readable workbook with numeric totals and matching filters', () => {

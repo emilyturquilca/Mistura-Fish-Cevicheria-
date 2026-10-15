@@ -1,7 +1,8 @@
 // Editing/deletion rules shared by the server and the deletion preview.
 (() => {
-  const collections = ['suppliers', 'ingredients', 'orders', 'receptions', 'movements', 'recipes'];
+  const collections = ['suppliers', 'ingredients', 'orders', 'receptions', 'movements', 'recipes','reservations','preparedWastes'];
   function prepare(s) {
+    s.reservations ||= [];s.preparedWastes ||= [];
     const balances = {};
     for (const m of s.movements) {
       const before = balances[m.ingredientId] || 0;
@@ -17,7 +18,7 @@
     s.nextMovementSequence = Math.max(s.nextMovementSequence || 1, last + 1);
   }
   function recalculate(s, { fail, find, round }) {
-    const balances = {}, costs = {};
+    const balances = {}, costs = {},automaticDelta={};
     for (const c of ['suppliers','ingredients']) {
       const names = s[c].map(r => r.name.toLocaleLowerCase());
       if(new Set(names).size !== names.length) fail('Ya existe otro registro con ese nombre. Edítalo antes de restaurar.');
@@ -50,18 +51,21 @@
         const receipt = find(s.receptions, m.receptionId, 'Recepción del movimiento');
         const line = receipt.lines.find(l => l.ingredientId === m.ingredientId) || fail('Movimiento sin línea de recepción.');
         Object.assign(m, { quantity: line.quantity, unitCost: line.unitCost, date: receipt.date, note: receipt.reference, lot: line.lot, expiry: line.expiry, orderId: receipt.orderId });
-        cost = round((before * (cost || 0) + m.quantity * m.unitCost) / (before + m.quantity), 6);
+        cost = round((Math.max(0,before) * (cost || 0) + m.quantity * m.unitCost) / (Math.max(0,before) + m.quantity), 6);
+      } else if(m.kind==='Stock'){
+        m.quantity=round(m.countedQuantity-before);m.unitCost=m.inputCost;cost=m.inputCost;automaticDelta[ingredient.id]=0;
       } else if (m.kind === 'Conteo') {
         m.quantity = round(m.countedQuantity - before);
         if (m.quantity > 0) {
           if (m.inputCost == null) fail('Un conteo posterior ahora aumenta el stock. Edita ese conteo e indica el costo del ingreso antes de cambiar la recepción.');
           m.unitCost = m.inputCost;
-          cost = round((before * (cost || 0) + m.quantity * m.unitCost) / m.countedQuantity, 6);
+          cost = round((Math.max(0,before) * (cost || 0) + m.quantity * m.unitCost) / (Math.max(0,before)+m.quantity), 6);
         } else m.unitCost = cost;
-      } else if (['Merma', 'Consumo'].includes(m.kind)) m.unitCost = cost;
+        automaticDelta[ingredient.id]=0;
+      } else if (['Merma', 'Consumo','Venta'].includes(m.kind)){m.unitCost = cost;if(m.kind==='Venta')automaticDelta[ingredient.id]=(automaticDelta[ingredient.id]||0)+m.quantity}
       else fail('Tipo de movimiento inválido.');
       const after = round(before + m.quantity);
-      if (after < 0) fail(`El cambio dejaría ${ingredient.name} con stock negativo en ${m.kind.toLowerCase()} del ${m.date}. Corrige o elimina primero esa salida.`);
+      if (after < 0 && m.kind!=='Venta' && m.kind!=='Stock' && round(after-(automaticDelta[ingredient.id]||0))<0) fail(`El cambio dejaría ${ingredient.name} con stock negativo en ${m.kind.toLowerCase()} del ${m.date}. Corrige o elimina primero esa salida.`);
       balances[ingredient.id] = after; costs[ingredient.id] = cost;
     }
     for (const ingredient of s.ingredients) ingredient.cost = costs[ingredient.id] ?? null;
@@ -71,9 +75,12 @@
     if (!collections.includes(entity)) fail('Registro no eliminable.');
     const target = find(s[entity], targetId, 'Registro'), bundle = Object.fromEntries(collections.map(c => [c, []]));
     if (entity === 'suppliers' && s.orders.some(o => o.supplierId === targetId)) fail('Este proveedor tiene compras. Reasigna o elimina esas compras antes de eliminar el proveedor.');
-    if (entity === 'ingredients' && (s.orders.some(o => o.lines.some(l => l.ingredientId === targetId)) || s.movements.some(m => m.ingredientId === targetId) || s.recipes.some(r => r.lines.some(l => l.ingredientId === targetId)))) fail('Este insumo tiene compras, movimientos o recetas. Corrige o elimina los registros relacionados antes de eliminar el insumo.');
+    if (entity === 'suppliers' && s.ingredients.some(i => i.supplierId === targetId)) fail('Este proveedor está asignado a insumos. Cambia su proveedor desde Inventario antes de eliminarlo.');
+    if (entity === 'ingredients' && (s.orders.some(o => o.lines.some(l => l.ingredientId === targetId)) || s.movements.some(m => m.ingredientId === targetId&&m.kind==='Venta') || s.recipes.some(r => r.lines.some(l => l.ingredientId === targetId)))) fail('Este insumo tiene compras, ventas o recetas. Corrige o elimina los registros relacionados antes de eliminar el insumo.');
+    if(entity==='movements'&&target.kind==='Venta')fail('El consumo viene de Loyverse. Corrige el stock físico desde Inventario.');
     if (entity === 'movements' && target.kind === 'Recepción') return deletion(s, 'receptions', target.receptionId, { fail, find });
     bundle[entity] = [structuredClone(target)];
+    if(entity==='ingredients')bundle.movements=s.movements.filter(m=>m.ingredientId===targetId).map(m=>structuredClone(m));
     if (entity === 'orders') bundle.receptions = s.receptions.filter(r => r.orderId === targetId).map(r => structuredClone(r));
     const receiptIds = new Set(bundle.receptions.map(r => r.id));
     if (receiptIds.size) bundle.movements = s.movements.filter(m => receiptIds.has(m.receptionId)).map(m => structuredClone(m));
@@ -93,7 +100,7 @@
       const entry = find(s.trash || [], p.trashId, 'Registro en papelera');
       for (const c of collections) for (const record of entry.bundle[c] || []) {
         if (s[c].some(r => r.id === record.id)) fail('Ya existe un registro con el mismo identificador.');
-        const index = entry.positions[c].find(x => x.id === record.id)?.index ?? s[c].length;
+        const index = entry.positions[c]?.find(x => x.id === record.id)?.index ?? s[c].length;
         s[c].splice(Math.min(index, s[c].length), 0, structuredClone(record));
       }
       s.trash = s.trash.filter(t => t.id !== entry.id);
