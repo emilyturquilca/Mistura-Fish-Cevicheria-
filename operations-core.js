@@ -36,12 +36,15 @@
   function apply(current, command, now = new Date().toISOString()) {
     const s = structuredClone(current), p = command.payload || {}, id = text(command.id, 'Identificador');
     if (s.commands.some(c => c.id === id)) return { state: s, duplicate: true };
+    globalThis.MisturaEdits.prepare(s);
     const key = suffix => id + suffix;
     const day = () => date(p.date, now);
     const movement = (ingredient, quantity, kind, extra = {}) => {
       s.movements.push({ id: key('/' + s.movements.length), ingredientId: ingredient.id, quantity: round(quantity), unitCost: ingredient.cost, kind, date: day(), postedAt: now, ...extra });
     };
-    if (command.type === 'supplier') {
+    if (globalThis.MisturaEdits.apply(s, command, now, { fail, text, num, find, date, unitQuantity, round })) {
+      // Edited and restored records are validated by the ledger replay below.
+    } else if (command.type === 'supplier') {
       const name = text(p.name, 'Proveedor');
       if (s.suppliers.some(x => x.id !== p.id && x.name.toLocaleLowerCase() === name.toLocaleLowerCase())) fail('Ya existe ese proveedor.');
       const item = { id: p.id || id, name, taxId: text(p.taxId, 'RUC', true), contact: text(p.contact, 'Contacto', true), phone: text(p.phone, 'Teléfono', true) };
@@ -50,8 +53,13 @@
     } else if (command.type === 'ingredient') {
       const name = text(p.name, 'Insumo');
       if (!['kg', 'l', 'un'].includes(p.unit)) fail('Unidad base inválida.');
-      if (s.ingredients.some(x => x.name.toLocaleLowerCase() === name.toLocaleLowerCase())) fail('Ya existe ese insumo.');
-      s.ingredients.push({ id, name, unit: p.unit, minimum: num(p.minimum, 'Stock mínimo', true), cost: null });
+      if (s.ingredients.some(x => x.id !== p.id && x.name.toLocaleLowerCase() === name.toLocaleLowerCase())) fail('Ya existe ese insumo.');
+      const item = { name, unit: p.unit, minimum: num(p.minimum, 'Stock mínimo', true) };
+      if (p.id) {
+        const old = find(s.ingredients, p.id, 'Insumo');
+        if (old.unit !== p.unit && (s.movements.some(m => m.ingredientId === old.id) || s.orders.some(o => o.lines.some(l => l.ingredientId === old.id)) || s.recipes.some(r => r.lines.some(l => l.ingredientId === old.id)))) fail('La unidad base de un insumo utilizado no puede cambiar. Corrige primero sus compras, movimientos y recetas.');
+        Object.assign(old, item, { updatedAt: now });
+      } else s.ingredients.push({ id, ...item, cost: null });
     } else if (command.type === 'order') {
       find(s.suppliers, p.supplierId, 'Proveedor');
       if (!Array.isArray(p.lines) || !p.lines.length || p.lines.length > 100) fail('Agrega entre 1 y 100 insumos a la compra.');
@@ -61,7 +69,9 @@
         if (seen.has(ingredient.id)) fail('No repitas el mismo insumo en una compra.'); seen.add(ingredient.id);
         return { id: key('/' + index), ingredientId: ingredient.id, quantity: unitQuantity(ingredient, line.quantity, line.unit), unitCost: num(line.unitCost, 'Costo por unidad base', true), received: 0 };
       });
-      s.orders.push({ id, number: s.orders.length + 1, supplierId: p.supplierId, date: day(), reference: text(p.reference, 'Referencia', true), status: 'Pendiente', lines, createdAt: now });
+      const previousNumbers = [...s.orders.map(o => o.number), ...(s.trash || []).flatMap(t => (t.bundle.orders || []).map(o => o.number))];
+      const number = Math.max(s.nextOrderNumber || 1, Math.max(0,...previousNumbers) + 1); s.nextOrderNumber = number + 1;
+      s.orders.push({ id, number, supplierId: p.supplierId, date: day(), reference: text(p.reference, 'Referencia', true), status: 'Pendiente', lines, createdAt: now });
     } else if (command.type === 'cancelOrder') {
       const order = find(s.orders, p.orderId, 'Compra');
       if (order.status !== 'Pendiente' || order.lines.some(l => l.received)) fail('Solo puedes anular una compra sin recepciones.');
@@ -96,8 +106,8 @@
         if (difference > 0) {
           const cost = num(p.unitCost, 'Costo por unidad base', true);
           ingredient.cost = round((previous * (ingredient.cost || 0) + difference * cost) / quantity, 6);
-          movement(ingredient, difference, 'Conteo', { note, unitCost: cost });
-        } else movement(ingredient, difference, 'Conteo', { note });
+          movement(ingredient, difference, 'Conteo', { note, unitCost: cost, countedQuantity: quantity, inputCost: cost });
+        } else movement(ingredient, difference, 'Conteo', { note, countedQuantity: quantity, inputCost: p.unitCost == null || p.unitCost === '' ? null : num(p.unitCost, 'Costo por unidad base', true) });
       } else {
         const quantity = unitQuantity(ingredient, p.quantity, p.unit);
         if (quantity > previous) fail('No hay stock suficiente para registrar esta salida.');
@@ -115,11 +125,13 @@
         if (yieldValue > 100) fail('El rendimiento no puede superar 100%.');
         return { ingredientId: ingredient.id, quantity: unitQuantity(ingredient, line.quantity, line.unit), yield: yieldValue / 100 };
       });
-      const old = s.recipes.find(r => r.productKey === productKey);
+      const old = p.id ? find(s.recipes, p.id, 'Receta') : s.recipes.find(r => r.productKey === productKey);
+      if(s.recipes.some(r => r.productKey === productKey && r.id !== old?.id)) fail('Este producto ya tiene una receta.');
       const recipe = { id: old?.id || id, productKey, portions: num(p.portions, 'Porciones'), lines, updatedAt: now, revision: (old?.revision || 0) + 1 };
       if (old) Object.assign(old, recipe); else s.recipes.push(recipe);
     } else fail('Operación no permitida.');
-    s.commands.push({ id, type: command.type, at: now });
+    globalThis.MisturaEdits.recalculate(s, { fail, find, round });
+    s.commands.push({ id, type: command.type, targetId: p.id || p.targetId || null, at: now });
     return { state: s, duplicate: false };
   }
   function combineSales(shared, local, now = Date.now()) {

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import '../sales-core.js';
 import '../operations-core.js';
+import '../operations-edit-core.js';
 import { GET, POST } from '../api/operations.js';
 
 const O = globalThis.MisturaOperations;
@@ -125,4 +126,117 @@ test('Shared refresh preserves manual imports and old local archives, but never 
   assert.equal(combined.v.cancelled, undefined); assert.equal(combined.v.staleRecent, undefined);
   assert.equal(combined.prods.old.n, 'Producto anterior'); assert.equal(combined.prods.fresh.n, 'Producto nuevo');
   assert.equal(local.v.updated.total, 60);
+});
+test('Editing a reception recalculates subsequent waste costs and recipe profitability', () => {
+  const s=received(10,20);s.state.sales.prods.test={n:'Prueba',p:40};
+  s.apply('recipe','recipe',{productKey:'test',portions:1,lines:[{ingredientId:'fish',quantity:200,unit:'g',yield:100}]});
+  s.apply('waste','waste',{ingredientId:'fish',quantity:2,unit:'kg',date:'2026-10-14',note:'Prueba'});
+  s.apply('edit','editReception',{id:'receive-1',orderId:'order-1',date:'2026-10-14',reference:'Corregido',lines:[{lineId:'order-1/0',quantity:10,unitCost:30,lot:'Lote nuevo',expiry:'2026-10-15'}]});
+  assert.equal(O.stock(s.state,'fish'),8);assert.equal(s.state.ingredients[0].cost,30);
+  assert.equal(s.state.movements.find(m=>m.kind==='Merma').unitCost,30);
+  assert.equal(s.state.movements[0].note,'Corregido');assert.equal(s.state.movements[0].lot,'Lote nuevo');
+  assert.equal(O.recipeCost(s.state,s.state.recipes[0]),6);
+});
+test('Editing a receipt cannot make a later movement negative; every record stays unchanged', () => {
+  const s=received();s.apply('usage','usage',{ingredientId:'fish',quantity:8,unit:'kg',date:'2026-10-14',note:'Prueba'});
+  const before=structuredClone(s.state);
+  assert.throws(()=>s.apply('edit','editReception',{id:'receive-1',date:'2026-10-14',lines:[{lineId:'order-1/0',quantity:5,unitCost:20}]}),/stock negativo/);
+  assert.deepEqual(s.state,before);
+});
+test('Editing and deleting a waste movement update stock; restoring reverses the deletion once', () => {
+  const s=received();s.apply('waste','waste',{ingredientId:'fish',quantity:2,unit:'kg',date:'2026-10-14',note:'Prueba'});
+  const waste=s.state.movements.at(-1).id;
+  s.apply('edit','editMovement',{id:waste,ingredientId:'fish',kind:'Consumo',quantity:500,unit:'g',date:'2026-10-14',note:'Tipo corregido'});
+  assert.equal(O.stock(s.state,'fish'),9.5);assert.equal(s.state.movements.at(-1).kind,'Consumo');
+  s.apply('delete','delete',{entity:'movements',targetId:waste});assert.equal(O.stock(s.state,'fish'),10);
+  s.apply('restore','restore',{trashId:'delete'});assert.equal(O.stock(s.state,'fish'),9.5);assert.equal(s.state.trash.length,0);
+  assert.equal(O.apply(s.state,command('restore','restore',{trashId:'delete'}),now).duplicate,true);
+});
+test('Deleting a purchase includes its receipts and ledger entries; restoring returns their original IDs', () => {
+  const s=received();const previous=structuredClone(s.state);
+  s.apply('delete','delete',{entity:'orders',targetId:'order-1'});
+  assert.equal(s.state.orders.length,0);assert.equal(s.state.receptions.length,0);assert.equal(O.stock(s.state,'fish'),0);
+  assert.equal(s.state.trash[0].bundle.receptions.length,1);assert.equal(s.state.trash[0].bundle.movements.length,1);
+  s.apply('new-order','order',{supplierId:'supplier-1',date:'2026-10-14',lines:[{ingredientId:'fish',quantity:1,unit:'kg',unitCost:1}]});
+  assert.equal(s.state.orders[0].number,2);
+  s.apply('restore','restore',{trashId:'delete'});
+  assert.equal(s.state.orders.find(o=>o.id==='order-1').number,1);assert.equal(O.stock(s.state,'fish'),10);
+  assert.equal(s.state.movements[0].id,previous.movements[0].id);assert.equal(s.state.receptions[0].id,'receive-1');
+});
+test('Deleting an input that would invalidate stock is blocked, not cascaded silently', () => {
+  const s=received();s.apply('usage','usage',{ingredientId:'fish',quantity:1,unit:'kg',date:'2026-10-14',note:'Prueba'});
+  const before=structuredClone(s.state);
+  assert.throws(()=>s.apply('delete','delete',{entity:'receptions',targetId:'receive-1'}),/stock negativo/);
+  assert.throws(()=>s.apply('delete','delete',{entity:'orders',targetId:'order-1'}),/stock negativo/);
+  assert.deepEqual(s.state,before);
+});
+test('Counts remain absolute physical totals after changing an earlier input, including legacy counts', () => {
+  const s=received();s.apply('count','count',{ingredientId:'fish',quantity:8,unitCost:20,date:'2026-10-14',note:'Conteo'});
+  const count=s.state.movements.at(-1);delete count.countedQuantity;delete count.inputCost;
+  s.apply('edit','editReception',{id:'receive-1',date:'2026-10-14',lines:[{lineId:'order-1/0',quantity:9,unitCost:30}]});
+  assert.equal(O.stock(s.state,'fish'),8);assert.equal(s.state.movements.at(-1).quantity,-1);assert.equal(s.state.movements.at(-1).unitCost,30);
+  s.apply('edit-count','editMovement',{id:count.id,ingredientId:'fish',quantity:7,unitCost:30,date:'2026-10-14',note:'Conteo corregido'});
+  assert.equal(O.stock(s.state,'fish'),7);
+});
+test('Editing purchases retains received line identities and rejects an understated order', () => {
+  const s=received();
+  s.apply('edit','editOrder',{id:'order-1',supplierId:'supplier-1',date:'2026-10-14',reference:'Referencia corregida',lines:[{ingredientId:'fish',quantity:12,unit:'kg',unitCost:25}]});
+  assert.equal(s.state.orders[0].lines[0].id,'order-1/0');assert.equal(s.state.orders[0].status,'Parcial');assert.equal(O.stock(s.state,'fish'),10);
+  assert.throws(()=>s.apply('bad-edit','editOrder',{id:'order-1',supplierId:'supplier-1',date:'2026-10-14',lines:[{ingredientId:'fish',quantity:9,unit:'kg',unitCost:25}]}),/menos cantidad/);
+});
+test('Suppliers and ingredients can be edited; deleting referenced records explains the dependency', () => {
+  const s=received();
+  s.apply('edit-supplier','supplier',{id:'supplier-1',name:'Nombre corregido',taxId:'',phone:'123',contact:''});
+  s.apply('edit-ingredient','ingredient',{id:'fish',name:'Pescado corregido',unit:'kg',minimum:4});
+  assert.equal(s.state.suppliers[0].name,'Nombre corregido');assert.equal(s.state.ingredients[0].minimum,4);assert.equal(s.state.ingredients[0].cost,20);
+  assert.throws(()=>s.apply('delete-supplier','delete',{entity:'suppliers',targetId:'supplier-1'}),/tiene compras/);
+  assert.throws(()=>s.apply('delete-ingredient','delete',{entity:'ingredients',targetId:'fish'}),/registros relacionados/);
+  assert.throws(()=>s.apply('unit-edit','ingredient',{id:'fish',name:'Pescado corregido',unit:'l',minimum:4}),/unidad base/);
+});
+test('Deleting and restoring unused suppliers and ingredients preserves their records', () => {
+  const s=setup();s.apply('delete-ingredient','delete',{entity:'ingredients',targetId:'fish'});s.apply('delete-supplier','delete',{entity:'suppliers',targetId:'supplier-1'});
+  assert.equal(s.state.ingredients.length,0);assert.equal(s.state.suppliers.length,0);
+  s.apply('restore-ingredient','restore',{trashId:'delete-ingredient'});s.apply('restore-supplier','restore',{trashId:'delete-supplier'});
+  assert.equal(s.state.ingredients[0].id,'fish');assert.equal(s.state.suppliers[0].id,'supplier-1');
+});
+test('Recipes can change their product, portions and ingredients, and can be deleted and restored', () => {
+  const s=received();s.state.sales.prods={one:{n:'Plato 1'},two:{n:'Plato 2'}};
+  s.apply('recipe','recipe',{productKey:'one',portions:1,lines:[{ingredientId:'fish',quantity:200,unit:'g',yield:100}]});
+  s.apply('edit','recipe',{id:'recipe',productKey:'two',portions:2,lines:[{ingredientId:'fish',quantity:300,unit:'g',yield:100}]});
+  assert.equal(s.state.recipes[0].productKey,'two');assert.equal(O.recipeCost(s.state,s.state.recipes[0]),3);
+  s.apply('delete','delete',{entity:'recipes',targetId:'recipe'});assert.equal(s.state.recipes.length,0);
+  s.apply('restore','restore',{trashId:'delete'});assert.equal(s.state.recipes[0].productKey,'two');
+});
+test('Restoring a deleted input preserves its position before later consumption and receipt costs', () => {
+  const s=setup();s.apply('opening','count',{ingredientId:'fish',quantity:10,unitCost:10,date:'2026-10-14',note:'Inicial'});
+  s.apply('order','order',{supplierId:'supplier-1',date:'2026-10-14',lines:[{ingredientId:'fish',quantity:20,unit:'kg',unitCost:20}]});
+  s.apply('a','receive',{orderId:'order',date:'2026-10-14',lines:[{lineId:'order/0',quantity:10,unitCost:20}]});
+  s.apply('usage','usage',{ingredientId:'fish',quantity:5,unit:'kg',date:'2026-10-14',note:'Consumo'});
+  s.apply('b','receive',{orderId:'order',date:'2026-10-14',lines:[{lineId:'order/0',quantity:10,unitCost:30}]});
+  s.apply('delete','delete',{entity:'receptions',targetId:'a'});
+  assert.equal(s.state.ingredients[0].cost,23.333333);
+  s.apply('restore','restore',{trashId:'delete'});
+  assert.equal(s.state.ingredients[0].cost,21);assert.equal(s.state.movements.find(m=>m.kind==='Consumo').unitCost,15);
+});
+test('Restoring parents or duplicate names is validated without losing the trash entry', () => {
+  const s=received();s.apply('delete-order','delete',{entity:'orders',targetId:'order-1'});s.apply('delete-supplier','delete',{entity:'suppliers',targetId:'supplier-1'});
+  const previous=structuredClone(s.state);
+  assert.throws(()=>s.apply('restore-order','restore',{trashId:'delete-order'}),/Proveedor de la compra/);assert.deepEqual(s.state,previous);
+  s.apply('new-supplier','supplier',{name:'Proveedor de prueba',taxId:'',contact:'',phone:''});
+  assert.throws(()=>s.apply('restore-supplier','restore',{trashId:'delete-supplier'}),/mismo|ese nombre/);
+});
+test('Adding lines to an old reception leaves room for restoring a later deleted consumption', () => {
+  const s=setup();s.apply('lemon','ingredient',{name:'Limón de prueba',unit:'kg',minimum:0});
+  s.apply('opening','count',{ingredientId:'lemon',quantity:10,unitCost:10,date:'2026-10-14',note:'Inicial'});
+  s.apply('order','order',{supplierId:'supplier-1',date:'2026-10-14',lines:[{ingredientId:'fish',quantity:10,unit:'kg',unitCost:20},{ingredientId:'lemon',quantity:20,unit:'kg',unitCost:20}]});
+  s.apply('a','receive',{orderId:'order',date:'2026-10-14',lines:[{lineId:'order/0',quantity:5,unitCost:20}]});
+  s.apply('usage','usage',{ingredientId:'lemon',quantity:5,unit:'kg',date:'2026-10-14',note:'Consumo'});
+  const movementId=s.state.movements.at(-1).id;
+  s.apply('c','receive',{orderId:'order',date:'2026-10-14',lines:[{lineId:'order/1',quantity:5,unitCost:30}]});
+  s.apply('delete','delete',{entity:'movements',targetId:movementId});
+  s.apply('edit-a','editReception',{id:'a',date:'2026-10-14',lines:[{lineId:'order/0',quantity:5,unitCost:20},{lineId:'order/1',quantity:5,unitCost:20}]});
+  s.apply('restore','restore',{trashId:'delete'});
+  assert.equal(s.state.movements.find(m=>m.id===movementId).unitCost,13.333333);
+  assert.equal(s.state.ingredients.find(i=>i.id==='lemon').cost,18.888889);
+  assert.equal(O.stock(s.state,'lemon'),15);
 });

@@ -18,7 +18,7 @@ El panel consulta Loyverse; no registra ventas, cobra ni envía pedidos a provee
 
 Las operaciones, el catálogo y los recibos sincronizados por API se guardan en PostgreSQL (Neon). Laptop y tablet deben abrir el mismo enlace permanente e iniciar sesión. **Actualizar datos** recupera cambios de otro dispositivo. Los cambios simultáneos provocan un aviso para revisar el formulario, en lugar de sobrescribirlos.
 
-La tabla mistura_operations contiene un documento JSONB versionado con proveedores, insumos, pedidos, recepciones, movimientos, recetas, comandos y ventas. Las reglas se validan en el servidor; un UPDATE condicionado a la versión confirma todo el movimiento o ninguno. Los identificadores de comando evitan escrituras duplicadas por reintentos. Los movimientos no tienen borrado: las diferencias físicas se corrigen con un conteo documentado. Los costos de las salidas quedan fijados al registrarlas; los escandallos utilizan el costo promedio vigente.
+La tabla mistura_operations contiene un documento JSONB versionado con proveedores, insumos, pedidos, recepciones, movimientos, recetas, comandos y ventas. Las reglas se validan en el servidor; un UPDATE condicionado a la versión confirma todo el movimiento o ninguno. Los identificadores de comando evitan escrituras duplicadas por reintentos. Los registros operativos tienen acciones Editar y Eliminar. Los borrados van a Papelera y pueden restaurarse. Eliminar una compra incluye sus recepciones y movimientos vinculados; antes de confirmar se muestra el alcance y el efecto en las existencias. Proveedores e insumos con referencias requieren reasignar o eliminar primero los registros relacionados. Ningún cambio puede dejar salidas con stock negativo. Las correcciones recalculan el costo promedio, los costos de salidas posteriores y los escandallos en el orden original de registro. Los conteos conservan el total físico indicado.
 
 Esta estructura corresponde a un negocio pequeño y una primera versión. Antes de sumar múltiples locales, años de historial o permisos por usuario, conviene separar entidades y recibos en tablas e incorporar migraciones. No hay inventario por lote ni reservas; lote/vencimiento sirven para trazabilidad del movimiento, no para FIFO/FEFO. Las fechas describen el documento; la valoración se aplica en el orden de registro, sin recalcular costos retrospectivos.
 
@@ -43,11 +43,15 @@ Vuelve a desplegar después de agregar variables. La API crea la tabla al primer
 | index.html | Navegación, ventas, filtros, gráficos y Excel |
 | operations-ui.js | Formularios y conexión a la base |
 | operations-core.js | Reglas de stock, costos, recepción y escandallos |
+| operations-edit-core.js | Edición, Papelera, restauración y recálculo del inventario |
+| operations-edit-ui.js | Editores y confirmación del alcance de los borrados |
 | api/operations.js | Escrituras autorizadas con control de versión |
 | api/sync-sales.js | Sincronización de Loyverse hacia PostgreSQL |
 | api/loyverse.js | Proxy de consulta y comprobación de conexión |
 | sales-core.js | Fechas, recibos, importes y exportaciones |
 
-npm test verifica importes, fechas UTC-05:00, anulaciones, devoluciones, Excel numérico, recepciones parciales, reintentos, unidades, costos ponderados, stock insuficiente y rendimientos. node tests/preview.mjs abre una prueba en http://127.0.0.1:4173 con datos ficticios y almacenamiento **en memoria**: comprueba formularios y sesiones compartidas, pero no verifica PostgreSQL ni necesita secretos de producción.
+npm test verifica importes, fechas UTC-05:00, anulaciones, devoluciones, Excel numérico, recepciones parciales, reintentos, unidades, costos ponderados, stock insuficiente y rendimientos, ediciones, borrados recuperables y restauraciones. node tests/preview.mjs abre una prueba en http://127.0.0.1:4173 con datos ficticios y almacenamiento **en memoria**: comprueba formularios y sesiones compartidas, pero no verifica PostgreSQL ni necesita secretos de producción.
 
 Los Excel incluyen resumen, totales por día y recibos del filtro. El beneficio histórico usa cost_total del recibo; costos ausentes se muestran desconocidos. Las fechas usan UTC-05:00. Las URL de despliegues individuales mantienen su versión; usa el enlace permanente para recibir actualizaciones.
+
+Para probar los editores con registros ficticios desechables, ejecuta node tests/preview.mjs --seed-operations. Todos los datos de esa vista quedan en memoria y se pierden al detener el servidor; no se conecta a producción.

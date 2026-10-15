@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import '../sales-core.js';
 import '../operations-core.js';
+import '../operations-edit-core.js';
 
 const root = new URL('../', import.meta.url);
 const today = globalThis.MisturaCore.dateKey();
@@ -16,6 +17,17 @@ let operationState = globalThis.MisturaOperations.initial(), operationVersion = 
 operationState.sales.prods.ceviche = { n: 'Ceviche de prueba', c: 'Prueba', p: 40, k: 15 };
 globalThis.MisturaCore.mergeReceipts(operationState.sales, receipts);
 operationState.sales.sync = new Date().toISOString();
+if(process.argv.includes('--seed-operations')){
+  const seed=(id,type,payload)=>{operationState=globalThis.MisturaOperations.apply(operationState,{id,type,payload}).state};
+  seed('qa-supplier','supplier',{name:'Proveedor QA',taxId:'',contact:'',phone:''});
+  seed('qa-unused-supplier','supplier',{name:'Proveedor sin compras QA',taxId:'',contact:'',phone:''});
+  seed('qa-fish','ingredient',{name:'Pescado QA',unit:'kg',minimum:2});
+  seed('qa-lemon','ingredient',{name:'Limón QA',unit:'kg',minimum:1});
+  seed('qa-order','order',{supplierId:'qa-supplier',date:today,reference:'QA-COMPRA',lines:[{ingredientId:'qa-fish',quantity:10,unit:'kg',unitCost:20}]});
+  seed('qa-reception','receive',{orderId:'qa-order',date:today,reference:'QA-GUIA',lines:[{lineId:'qa-order/0',quantity:10,unitCost:20,lot:'QA-LOTE'}]});
+  seed('qa-waste','waste',{ingredientId:'qa-fish',quantity:200,unit:'g',date:today,note:'Merma de prueba'});
+  seed('qa-recipe','recipe',{productKey:'ceviche',portions:1,lines:[{ingredientId:'qa-fish',quantity:200,unit:'g',yield:80}]});
+}
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, 'http://localhost');
   response.setHeader('Cache-Control', 'no-store');
@@ -39,7 +51,7 @@ const server = createServer(async (request, response) => {
     response.end(JSON.stringify(data || { error: 'Not found' }));
     return;
   }
-  const files = { '/': 'index.html', '/dark': 'index.html', '/index.html': 'index.html', '/sales-core.js': 'sales-core.js', '/operations-core.js': 'operations-core.js', '/operations-ui.js': 'operations-ui.js', '/assets/xlsx.full.min.js': 'assets/xlsx.full.min.js' };
+  const files = { '/': 'index.html', '/dark': 'index.html', '/index.html': 'index.html', '/sales-core.js': 'sales-core.js', '/operations-core.js': 'operations-core.js', '/operations-edit-core.js':'operations-edit-core.js', '/operations-edit-ui.js':'operations-edit-ui.js', '/operations-ui.js': 'operations-ui.js', '/assets/xlsx.full.min.js': 'assets/xlsx.full.min.js' };
   const file = files[url.pathname];
   if (!file) { response.writeHead(404); response.end(); return; }
   try {
