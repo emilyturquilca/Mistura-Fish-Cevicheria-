@@ -48,7 +48,7 @@
     } else if (command.type === 'supplier') {
       const name = text(p.name, 'Proveedor');
       if (s.suppliers.some(x => x.id !== p.id && x.name.toLocaleLowerCase() === name.toLocaleLowerCase())) fail('Ya existe ese proveedor.');
-      const item = { id: p.id || id, name, taxId: text(p.taxId, 'RUC', true), contact: text(p.contact, 'Contacto', true), phone: text(p.phone, 'Teléfono', true) };
+      const item = { id: p.id || id, name, taxId: text(p.taxId, 'RUC', true), contact: text(p.contact ?? s.suppliers.find(x=>x.id===p.id)?.contact, 'Contacto', true), phone: text(p.phone, 'Teléfono', true) };
       if (item.taxId && !/^\d{11}$/.test(item.taxId)) fail('El RUC debe tener 11 dígitos.');
       if (p.id) Object.assign(find(s.suppliers, p.id, 'Proveedor'), item); else s.suppliers.push(item);
     } else if (command.type === 'ingredient') {
