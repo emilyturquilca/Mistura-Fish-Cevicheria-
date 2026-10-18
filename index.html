@@ -14,6 +14,7 @@
 <script src="operations-edit-ui.js"></script>
 <script src="restaurant-ui.js"></script>
 <script src="payables-ui.js"></script>
+<script src="supplier-performance-ui.js"></script>
 <script src="home-ui.js"></script>
 <style>
 :root{--bg:#f3f8fa;--card:#fff;--ink:#0d2b3e;--mut:#5b7686;--line:#dbe8ee;--side:#0b2a40;--sea:#0e7c9b;--tq:#19b5b0;--warm:#f08a4b;--sand:#e8f4f6;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -50,7 +51,7 @@ canvas{max-height:260px}.empty{padding:24px;text-align:center;color:var(--mut)}
 .op-actions{display:inline-flex;gap:5px;flex-wrap:wrap}.op-delete{color:var(--ink);border-color:var(--warm)}dialog{width:min(850px,94vw);max-height:88vh;overflow:auto;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);padding:20px}dialog::backdrop{background:#00131fb3}dialog h2{margin:0;flex:1}dialog .op-form{margin-top:14px}dialog fieldset{margin-bottom:12px}dialog .notice{white-space:normal}dialog table{min-width:500px}
 .supplier-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:14px}.supplier-card h2{margin:0}.supplier-name{border:0;background:none;padding:0;color:var(--sea);font:inherit;font-size:17px;font-weight:700;text-align:left;cursor:pointer;overflow-wrap:anywhere}.supplier-name:focus-visible{outline:2px solid var(--warm)}.supplier-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}.supplier-summary dt{font-size:12px;color:var(--mut)}.supplier-summary dd{margin:3px 0 0;font-size:17px;font-weight:700}.supplier-section-nav{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}.supplier-section{scroll-margin-top:20px}
 .supplier-category-filter{min-width:0;max-width:100%}.supplier-category-filter select{max-width:100%}.supplier-category-name{flex:1;min-width:0;overflow-wrap:anywhere}.supplier-card .tag{overflow-wrap:anywhere}
-</style><link rel="stylesheet" href="home.css"></head><body>
+</style><link rel="stylesheet" href="home.css"><link rel="stylesheet" href="supplier-performance.css"></head><body>
 <aside id="nav"><div class="logo"><img src="assets/mistura-logo.png" width="110" height="110" alt="Mistura Fish Cevichería"><small>Ilo · Moquegua · Perú</small></div></aside>
 <main id="app"></main>
 <script>
@@ -219,7 +220,7 @@ Reportes(){const vs=sel(P.k);if(!vs.length)return '<h1>Reportes</h1>'+period()+n
  <p class="k">Los recibos anulados se retiran y las devoluciones se restan. Se actualizan también los recibos existentes. El beneficio bruto requiere costos en los recibos.</p><button class="pill" onclick="salir()">Cerrar sesión</button></div>`},
 Configuración(){return `<h1>Configuración</h1><p class="sub">Mistura Fish · alcance y conexiones</p><div class="grid g2"><div class="card"><h2>Primera versión</h2><p>Inventario → proveedores y compras → recetas y mermas → rentabilidad → Loyverse. Reservaciones con pedidos para planificar la preparación y las compras.</p><p>${OPS.configured?'Base PostgreSQL compartida conectada.':'Base compartida pendiente de conexión.'} ${serverConfigured?'Token de Loyverse configurado en el servidor.':''}</p><p class="k">Acceso con la contraseña del panel. Puedes editar registros y deshacer los borrados. El inventario se descuenta con las ventas según las recetas configuradas. El acceso sigue usando la contraseña compartida.</p></div>
  <div class="card"><h2>Segunda etapa · pendiente</h2><p>Producción → cocina/comandas → personal → clientes/fidelización → pronóstico.</p><p class="k">Estos módulos quedan para la siguiente etapa.</p></div><div class="card"><button class="pill" onclick="view='Papelera';render()">Recuperar registros eliminados</button><h2>Catálogo de Loyverse</h2><p>${CATS.map(c=>`<span class="tag">${esc(c)}</span> `).join('')}</p><h2>Métodos de pago</h2>${PAY.map(c=>`<span class="tag">${esc(c)}</span> `).join('')}</div></div>`}};
-Object.assign(V,OperationsViews,RestaurantViews,SupplierViews,HomeViews);
+Object.assign(V,OperationsViews,RestaurantViews,SupplierViews,SupplierPerformanceViews,HomeViews);
 function ventasExportar(filtrar){return sel(P.k).filter(v=>!filtrar||((v.id+v.cli).toLowerCase().includes(q.toLowerCase())&&(!fp||v.pay==fp)))}
 function nombreReporte(extension){const[s,e]=range(P.k);return `ventas-${Core.dateKey(s)}-a-${Core.dateKey(new Date(e-1))}.${extension}`}
 function exportExcel(filtrar=false){

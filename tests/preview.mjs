@@ -30,6 +30,7 @@ if(process.argv.includes('--seed-operations')){
   seed('qa-waste','waste',{ingredientId:'qa-fish',quantity:200,unit:'g',date:today,note:'Merma de prueba'});
   seed('qa-recipe','recipe',{productKey:'ceviche',portions:1,lines:[{ingredientId:'qa-fish',quantity:200,unit:'g',yield:80}]});
   seed('qa-reservation','reservation',{name:'Mesa de prueba',phone:'',guests:4,plannedAt:today+'T13:00:00-05:00',status:'Pendiente',note:'',lines:[{productKey:'ceviche',quantity:4}]});
+  seed('qa-order-later','order',{supplierId:'qa-supplier',date:today,reference:'QA-SEGUNDA-COMPRA',lines:[{ingredientId:'qa-fish',quantity:5,unit:'kg',unitCost:22}]});
 }
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, 'http://localhost');
@@ -70,7 +71,7 @@ const server = createServer(async (request, response) => {
     return;
   }
   const files = { '/': 'index.html', '/dark': 'index.html', '/index.html': 'index.html', '/sales-core.js': 'sales-core.js', '/operations-core.js': 'operations-core.js', '/operations-edit-core.js':'operations-edit-core.js','/restaurant-core.js':'restaurant-core.js','/restaurant-ui.js':'restaurant-ui.js', '/payables-core.js':'payables-core.js', '/payables-ui.js':'payables-ui.js', '/operations-edit-ui.js':'operations-edit-ui.js', '/operations-ui.js': 'operations-ui.js', '/assets/xlsx.full.min.js': 'assets/xlsx.full.min.js' };
-  Object.assign(files,{'/home-core.js':'home-core.js','/home-ui.js':'home-ui.js','/home.css':'home.css','/assets/mistura-logo.png':'assets/mistura-logo.png'});
+  Object.assign(files,{'/supplier-performance-ui.js':'supplier-performance-ui.js','/supplier-performance.css':'supplier-performance.css','/home-core.js':'home-core.js','/home-ui.js':'home-ui.js','/home.css':'home.css','/assets/mistura-logo.png':'assets/mistura-logo.png'});
   const file = files[url.pathname];
   if (!file) { response.writeHead(404); response.end(); return; }
   try {
