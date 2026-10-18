@@ -2,6 +2,15 @@
 (() => {
   const C=()=>globalThis.MisturaCore,O=()=>globalThis.MisturaOperations;
   const money=n=>Math.round((Number(n)+Number.EPSILON)*100)/100;
+  const categories=Object.freeze(['Pescado','Verduras','Pulpo','Servicios','Abarrotes','Conchas negras','Sin categoría']);
+  function supplierCategory(supplier){
+    if(supplier.category!=null)return supplier.category;
+    const name=String(supplier.name||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase();
+    const rules=[['Pescado',/\bpescados?\b/],['Verduras',/\bverduras?\b/],['Pulpo',/\bpulpos?\b/],['Servicios',/\b(?:gas|agua|llamagas)\b/],['Abarrotes',/\babarrotes\b/],['Conchas negras',/\bconchas?\s+negras?\b/]];
+    const matches=rules.filter(([,pattern])=>pattern.test(name));
+    return matches.length===1?matches[0][0]:'Sin categoría';
+  }
+  function prepareCategories(s){for(const supplier of s.suppliers)if(supplier.category==null)supplier.category=supplierCategory(supplier)}
   function calendar(value,label,fail){
     const day=String(value||'');
     if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(Date.parse(day+'T12:00:00Z'))||new Date(day+'T12:00:00Z').toISOString().slice(0,10)!==day)fail(label+': indica una fecha válida.');
@@ -42,6 +51,8 @@
     return {accounts:list,pending:money(confirmed.reduce((n,a)=>n+Math.max(0,a.balance),0)),overdue:money(confirmed.filter(a=>a.status==='Vencida').reduce((n,a)=>n+a.balance,0)),paid:money(confirmed.reduce((n,a)=>n+a.paid,0)),unconfirmed:list.filter(a=>!a.confirmed).length,received:money(list.filter(a=>a.entity==='receptions').reduce((n,a)=>n+a.amount,0))};
   }
   function validate(s,h){
+    prepareCategories(s);
+    if(s.suppliers.some(p=>!categories.includes(p.category)))h.fail('Categoría de proveedor inválida.');
     const list=accounts(s),seen=new Set();
     for(const debt of s.supplierDebts||[]){
       h.find(s.suppliers,debt.supplierId,'Proveedor de la deuda');
@@ -85,7 +96,11 @@
   }
   function after(s,previous,command,now,h){
     const p=command.payload||{};
-    if(command.type==='supplier')Object.assign(h.find(s.suppliers,p.id||command.id,'Proveedor'),supplierTerms(p,previous.suppliers.find(x=>x.id===p.id),h));
+    if(command.type==='supplier'){
+      const old=previous.suppliers.find(x=>x.id===p.id),category=p.category??(old?supplierCategory(old):'Sin categoría');
+      if(!categories.includes(category))h.fail('Categoría de proveedor inválida.');
+      Object.assign(h.find(s.suppliers,p.id||command.id,'Proveedor'),supplierTerms(p,old,h),{category});
+    }
     if(command.type==='receive'){
       const r=h.find(s.receptions,command.id,'Recepción');Object.assign(r,receptionTerms(s,r,p,h),{paymentUpdatedAt:now});
     }
@@ -101,5 +116,5 @@
     }
     return Object.values(records);
   }
-  globalThis.MisturaPayables={accounts,summary,apply,after,validate,supplies};
+  globalThis.MisturaPayables={accounts,summary,apply,after,validate,supplies,categories,supplierCategory};
 })();
