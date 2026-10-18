@@ -49,12 +49,22 @@
   function accounts(s,today=C().dateKey()){
     const records=s.receptions.map(r=>{
       const order=s.orders.find(o=>o.id===r.orderId);
-      return {id:'reception/'+r.id,entity:'receptions',recordId:r.id,supplierId:order?.supplierId,orderId:order?.id,orderNumber:order?.number,date:r.date,reference:r.reference||'',amount:money(r.lines.reduce((n,l)=>n+l.quantity*l.unitCost,0)),paymentMode:r.paymentMode||'',dueDate:r.dueDate||'',confirmed:Boolean(r.paymentMode&&r.dueDate),kind:'Mercadería recibida'};
+      return {id:'reception/'+r.id,entity:'receptions',recordId:r.id,supplierId:order?.supplierId,orderId:order?.id,orderNumber:order?.number,date:r.date,reference:r.reference||'',amount:money(r.lines.reduce((n,l)=>n+l.quantity*l.unitCost,0)),paymentMode:r.paymentMode||'',dueDate:r.paymentMode==='Contado'?r.date:r.dueDate||'',confirmed:r.paymentMode==='Contado'||Boolean(r.paymentMode&&r.dueDate),kind:'Mercadería recibida'};
     }).concat((s.supplierDebts||[]).map(d=>({id:'debt/'+d.id,entity:'supplierDebts',recordId:d.id,supplierId:d.supplierId,date:d.date,reference:d.reference,amount:d.amount,dueDate:d.dueDate,paymentMode:'Saldo anterior',confirmed:true,kind:'Deuda anterior'})));
     return records.map(a=>{
-      const paid=money((s.supplierPayments||[]).filter(p=>p.accountId===a.id).reduce((n,p)=>n+p.amount,0)),balance=money(a.amount-paid);
-      return {...a,paid,balance,status:!a.confirmed?'Por confirmar':balance<=0?'Pagada':a.dueDate<today?'Vencida':a.dueDate===today?'Vence hoy':'Pendiente'};
+      const manualPaid=money((s.supplierPayments||[]).filter(p=>p.accountId===a.id).reduce((n,p)=>n+p.amount,0));
+      // Contado is the user's declaration that this receipt is fully paid.
+      // Cover only the remainder so historical manual payments are never counted twice.
+      const cashPaid=a.paymentMode==='Contado'?money(Math.max(0,a.amount-manualPaid)):0;
+      const paid=money(manualPaid+cashPaid),balance=money(a.amount-paid);
+      return {...a,manualPaid,cashPaid,paid,balance,status:!a.confirmed?'Por confirmar':balance<=0?'Pagada':a.dueDate<today?'Vencida':a.dueDate===today?'Vence hoy':'Pendiente'};
     });
+  }
+  function paymentHistory(s,supplierId='',debtsOnly=false){
+    const list=accounts(s),byId=new Map(list.map(a=>[a.id,a]));
+    const manual=(s.supplierPayments||[]).map(p=>({...p,source:'manual'}));
+    const cash=list.filter(a=>a.cashPaid>0).map(a=>({id:'cash/'+a.recordId,accountId:a.id,supplierId:a.supplierId,date:a.date,amount:a.cashPaid,method:'Al contado · medio no indicado',reference:a.reference,note:'Importe cubierto por la compra registrada al contado.',source:'cash',recordId:a.recordId}));
+    return [...manual,...cash].filter(p=>(!supplierId||p.supplierId===supplierId)&&(!debtsOnly||byId.get(p.accountId)?.paymentMode!=='Contado')).sort((a,b)=>b.date.localeCompare(a.date)||String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
   }
   function evaluation(p,h){
     const score=(value,label)=>{
@@ -89,8 +99,8 @@
     }));
     return {receptions,punctuality:average('punctuality'),quality:average('quality'),quantities};
   }
-  function summary(s,supplierId,today){
-    const list=accounts(s,today).filter(a=>!supplierId||a.supplierId===supplierId),confirmed=list.filter(a=>a.confirmed);
+  function summary(s,supplierId,today,debtsOnly=false){
+    const list=accounts(s,today).filter(a=>(!supplierId||a.supplierId===supplierId)&&(!debtsOnly||a.paymentMode!=='Contado')),confirmed=list.filter(a=>a.confirmed);
     return {accounts:list,pending:money(confirmed.reduce((n,a)=>n+Math.max(0,a.balance),0)),overdue:money(confirmed.filter(a=>a.status==='Vencida').reduce((n,a)=>n+a.balance,0)),paid:money(confirmed.reduce((n,a)=>n+a.paid,0)),unconfirmed:list.filter(a=>!a.confirmed).length,received:money(list.filter(a=>a.entity==='receptions').reduce((n,a)=>n+a.amount,0))};
   }
   function validate(s,h){
@@ -110,12 +120,12 @@
     }
     for(const reception of s.receptions)evaluation(reception,h);
     for(const payment of s.supplierPayments||[]){
-      const account=h.find(list,payment.accountId,'Cuenta del abono');
-      if(!account.confirmed)h.fail('Confirma la cuenta antes de registrar abonos.');
-      if(payment.supplierId!==account.supplierId)h.fail('La compra tiene abonos de otro proveedor. Corrige esos abonos antes de reasignarla.');
-      if(payment.date<account.date)h.fail('El abono no puede ser anterior a la deuda.');
+      const account=h.find(list,payment.accountId,'Cuenta del pago');
+      if(!account.confirmed)h.fail('Confirma la cuenta antes de registrar pagos.');
+      if(payment.supplierId!==account.supplierId)h.fail('La compra tiene pagos de otro proveedor. Corrige esos pagos antes de reasignarla.');
+      if(payment.date<account.date)h.fail('El pago no puede ser anterior a la deuda.');
     }
-    if(list.some(a=>a.balance<0))h.fail('Los abonos superarían el importe de la deuda. Corrige primero sus abonos.');
+    if(list.some(a=>a.balance<0))h.fail('Los pagos superarían el importe de la deuda. Corrige primero sus pagos.');
   }
   function apply(s,command,now,h){
     const p=command.payload||{};
@@ -125,11 +135,13 @@
     if(command.type==='supplierCategory'){saveCategory(s,p,command.id,now,h);return true}
     if(command.type==='supplierPayment'){
       const account=h.find(accounts(s),p.accountId,'Cuenta por pagar');
-      if(!account.confirmed)h.fail('Confirma las condiciones de esta cuenta antes de registrar un abono.');
-      const date=h.date(p.date,now);if(date<account.date)h.fail('El abono no puede ser anterior a la deuda.');
+      if(!account.confirmed)h.fail('Confirma las condiciones de esta cuenta antes de registrar un pago.');
+      const old=p.id?h.find(s.supplierPayments,p.id,'Pago'):null;
+      if(account.paymentMode==='Contado'&&(!old||old.accountId!==account.id))h.fail('Esta compra al contado ya está pagada. Si falta pagar algo, cambia su forma de pago a Crédito.');
+      const date=h.date(p.date,now);if(date<account.date)h.fail('El pago no puede ser anterior a la deuda.');
       const method=h.text(p.method,'Medio de pago');if(!['Efectivo','Transferencia','Yape','Plin','Otro'].includes(method))h.fail('Medio de pago inválido.');
-      const record={accountId:account.id,supplierId:account.supplierId,amount:amount(p.amount,h),date,method,reference:h.text(p.reference,'Referencia del abono',true),note:h.text(p.note,'Nota',true),updatedAt:now};
-      if(p.id)Object.assign(h.find(s.supplierPayments,p.id,'Abono'),record);else s.supplierPayments.push({id:command.id,createdAt:now,...record});
+      const record={accountId:account.id,supplierId:account.supplierId,amount:amount(p.amount,h),date,method,reference:h.text(p.reference,'Referencia del pago',true),note:h.text(p.note,'Nota',true),updatedAt:now};
+      if(p.id)Object.assign(h.find(s.supplierPayments,p.id,'Pago'),record);else s.supplierPayments.push({id:command.id,createdAt:now,...record});
       return true;
     }
     if(command.type==='supplierDebt'){
@@ -172,5 +184,5 @@
     }
     return Object.values(records);
   }
-  globalThis.MisturaPayables={accounts,summary,apply,after,validate,supplies,categories,supplierCategory,categoryNames,priceHistory,performance};
+  globalThis.MisturaPayables={accounts,summary,apply,after,validate,supplies,categories,supplierCategory,categoryNames,priceHistory,performance,paymentHistory};
 })();
