@@ -14,6 +14,8 @@ Primera versión: compras, proveedores, inventario, mermas, escandallos, rentabi
 
 ## Proveedores y cuentas por pagar · primera etapa
 
+Los proveedores se clasifican en **Pescado, Verduras, Pulpo, Servicios (gas y agua), Abarrotes y Conchas negras**; los no clasificados quedan en Sin categoría. La categoría se elige al agregar o editar y se puede filtrar en el directorio. Los proveedores anteriores sin categoría se clasifican solo cuando su nombre indica un rubro inequívoco; una categoría elegida manualmente se conserva al cambiar el nombre.
+
 En **Proveedores → Ver ficha** se consultan condiciones, historial de compras, cantidades recibidas, insumos suministrados, último costo recibido, cuentas y abonos. El historial combina los insumos asignados en Inventario con las recepciones reales. Una compra solicitada no es todavía una deuda: cada recepción genera una cuenta por su importe real, incluso cuando la entrega es parcial.
 
 Cada proveedor admite **Contado** o **Crédito** con días de plazo y condiciones adicionales. Las recepciones proponen ese acuerdo y permiten confirmar el vencimiento. Contado vence el día de recepción, pero no se marca pagado automáticamente. Cambiar las condiciones generales del proveedor solo afecta propuestas futuras, sin mover los vencimientos ya acordados.

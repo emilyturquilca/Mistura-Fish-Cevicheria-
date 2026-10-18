@@ -60,7 +60,7 @@
       if(p.newSupplierName){
         const supplierName=text(p.newSupplierName,'Proveedor');
         let supplier=s.suppliers.find(x=>x.name.toLocaleLowerCase()===supplierName.toLocaleLowerCase());
-        if(!supplier){supplier={id:id+'/supplier',name:supplierName,taxId:'',contact:'',phone:''};s.suppliers.push(supplier)}
+        if(!supplier){supplier={id:id+'/supplier',name:supplierName,taxId:'',contact:'',phone:'',category:'Sin categoría'};s.suppliers.push(supplier)}
         supplierId=supplier.id;
       }
       if(supplierId)find(s.suppliers,supplierId,'Proveedor');

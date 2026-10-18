@@ -97,3 +97,27 @@ test('Supplier product history uses actual reception quantities and latest price
   const history=P.supplies(s.state,'supplier');assert.equal(history.length,1);assert.equal(history[0].quantity,10);assert.equal(history[0].lastCost,24);
   assert.equal(P.supplies(s.state,'nonexistent').length,0);
 });
+
+test('Legacy suppliers are categorized only by unambiguous supply descriptions',()=>{
+  const cases=[['Distribuidor de pescado','Pescado'],['Distribuidor de verduras','Verduras'],['Distribuidor de pulpo','Pulpo'],['Servicio de agua','Servicios'],['LLAMAGAS','Servicios'],['Distribuidor de abarrotes','Abarrotes'],['Distribuidor de conchas negras','Conchas negras'],['Pescado y verduras','Sin categoría'],['Gaspar','Sin categoría']];
+  const before=O.initial();before.suppliers=cases.map(([name],i)=>({id:'legacy-'+i,name,phone:'',contact:'',taxId:''}));
+  const state=O.apply(before,{id:'new',type:'supplier',payload:{name:'Otro proveedor ficticio'}},now).state;
+  for(let i=0;i<cases.length;i++)assert.equal(state.suppliers[i].category,cases[i][1]);
+  assert.ok(before.suppliers.every(s=>s.category==null),'The previous state is not mutated');
+});
+
+test('An explicit supplier category survives name changes without changing balances',()=>{
+  const s=setup();s.buy();s.receive();s.pay();const summary=P.summary(s.state,'supplier',day);
+  s.apply('categorize','supplier',{id:'supplier',name:'Proveedor ficticio',category:'Pescado'});
+  s.apply('rename','supplier',{id:'supplier',name:'Distribuidor con nombre nuevo'});
+  assert.equal(s.state.suppliers[0].category,'Pescado');assert.deepEqual(P.summary(s.state,'supplier',day),summary);assert.equal(O.stock(s.state,'fish'),5);
+  s.apply('change','supplier',{id:'supplier',name:'Distribuidor con nombre nuevo',category:'Verduras'});assert.equal(s.state.suppliers[0].category,'Verduras');
+});
+
+test('Unknown supplier categories fail atomically and a restored category is preserved',()=>{
+  const s=setup(),before=structuredClone(s.state);
+  assert.throws(()=>s.apply('invalid','supplier',{id:'supplier',name:'Proveedor ficticio',category:'No permitida'}),/Categoría/);assert.deepEqual(s.state,before);
+  s.apply('free','supplier',{name:'Proveedor libre',category:'Conchas negras'});
+  s.apply('deleted','delete',{entity:'suppliers',targetId:'free'});s.apply('restored','restore',{trashId:'deleted'});
+  assert.equal(s.state.suppliers.find(p=>p.id==='free').category,'Conchas negras');
+});
