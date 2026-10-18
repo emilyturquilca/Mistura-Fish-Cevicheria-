@@ -3,6 +3,16 @@
   const C=()=>globalThis.MisturaCore,O=()=>globalThis.MisturaOperations;
   const money=n=>Math.round((Number(n)+Number.EPSILON)*100)/100;
   const categories=Object.freeze(['Pescado','Verduras','Pulpo','Servicios','Abarrotes','Conchas negras','Sin categoría']);
+  const categoryKey=name=>String(name).trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase().replace(/^servicios \(gas y agua\)$/,'servicios');
+  const categoryNames=s=>[...categories,...(s?.supplierCategories||[]).map(c=>c.name)];
+  function saveCategory(s,p,id,now,h){
+    const name=h.text(p.name,'Nombre de la categoría');
+    if(name.length>60||name==='__new__')h.fail('La categoría debe tener como máximo 60 caracteres y un nombre válido.');
+    const old=p.id?h.find(s.supplierCategories,p.id,'Categoría propia'):null;
+    if(categories.some(c=>categoryKey(c)===categoryKey(name))||s.supplierCategories.some(c=>c.id!==old?.id&&categoryKey(c.name)===categoryKey(name)))h.fail('Ya existe una categoría con ese nombre. Selecciónala en la lista.');
+    if(old){for(const supplier of s.suppliers)if(supplier.category===old.name)supplier.category=name;Object.assign(old,{name,updatedAt:now});return old}
+    const record={id,name,createdAt:now};s.supplierCategories.push(record);return record;
+  }
   function supplierCategory(supplier){
     if(supplier.category!=null)return supplier.category;
     const name=String(supplier.name||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase();
@@ -52,7 +62,9 @@
   }
   function validate(s,h){
     prepareCategories(s);
-    if(s.suppliers.some(p=>!categories.includes(p.category)))h.fail('Categoría de proveedor inválida.');
+    const names=categoryNames(s),keys=names.map(categoryKey);
+    if(new Set(keys).size!==keys.length)h.fail('Ya existe una categoría con ese nombre. Corrige el duplicado antes de restaurar.');
+    if(s.suppliers.some(p=>!names.includes(p.category)))h.fail('Categoría de proveedor inválida. Restaura su categoría o elige una disponible.');
     const list=accounts(s),seen=new Set();
     for(const debt of s.supplierDebts||[]){
       h.find(s.suppliers,debt.supplierId,'Proveedor de la deuda');
@@ -73,6 +85,7 @@
   }
   function apply(s,command,now,h){
     const p=command.payload||{};
+    if(command.type==='supplierCategory'){saveCategory(s,p,command.id,now,h);return true}
     if(command.type==='supplierPayment'){
       const account=h.find(accounts(s),p.accountId,'Cuenta por pagar');
       if(!account.confirmed)h.fail('Confirma las condiciones de esta cuenta antes de registrar un abono.');
@@ -97,8 +110,8 @@
   function after(s,previous,command,now,h){
     const p=command.payload||{};
     if(command.type==='supplier'){
-      const old=previous.suppliers.find(x=>x.id===p.id),category=p.category??(old?supplierCategory(old):'Sin categoría');
-      if(!categories.includes(category))h.fail('Categoría de proveedor inválida.');
+      const old=previous.suppliers.find(x=>x.id===p.id),category=p.category==='__new__'?saveCategory(s,{name:p.newCategoryName},command.id+'/category',now,h).name:p.category??(old?supplierCategory(old):'Sin categoría');
+      if(!categoryNames(s).includes(category))h.fail('Categoría de proveedor inválida.');
       Object.assign(h.find(s.suppliers,p.id||command.id,'Proveedor'),supplierTerms(p,old,h),{category});
     }
     if(command.type==='receive'){
@@ -116,5 +129,5 @@
     }
     return Object.values(records);
   }
-  globalThis.MisturaPayables={accounts,summary,apply,after,validate,supplies,categories,supplierCategory};
+  globalThis.MisturaPayables={accounts,summary,apply,after,validate,supplies,categories,supplierCategory,categoryNames};
 })();

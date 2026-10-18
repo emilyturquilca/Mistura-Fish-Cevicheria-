@@ -121,3 +121,36 @@ test('Unknown supplier categories fail atomically and a restored category is pre
   s.apply('deleted','delete',{entity:'suppliers',targetId:'free'});s.apply('restored','restore',{trashId:'deleted'});
   assert.equal(s.state.suppliers.find(p=>p.id==='free').category,'Conchas negras');
 });
+
+test('Custom supplier categories are shared records and renaming updates assigned suppliers without affecting balances',()=>{
+  const s=setup();s.buy();s.receive();s.pay();const balance=P.summary(s.state,'supplier',day);
+  s.apply('category','supplierCategory',{name:'Bebidas'});assert.ok(P.categoryNames(s.state).includes('Bebidas'));
+  s.apply('assign','supplier',{id:'supplier',name:'Proveedor ficticio',category:'Bebidas'});
+  s.apply('rename-category','supplierCategory',{id:'category',name:'Bebidas y refrescos'});
+  assert.equal(s.state.suppliers[0].category,'Bebidas y refrescos');assert.ok(!P.categoryNames(s.state).includes('Bebidas'));
+  assert.deepEqual(P.summary(s.state,'supplier',day),balance);assert.equal(O.stock(s.state,'fish'),5);
+});
+
+test('Inline category creation and supplier save form one atomic operation',()=>{
+  const s=setup();s.apply('inline','supplier',{name:'Proveedor nuevo',category:'__new__',newCategoryName:'Congelados'});
+  assert.equal(s.state.suppliers.find(p=>p.id==='inline').category,'Congelados');assert.equal(s.state.supplierCategories[0].name,'Congelados');
+  const before=structuredClone(s.state);
+  assert.throws(()=>s.apply('invalid-inline','supplier',{name:'No debe guardarse',category:'__new__',newCategoryName:''}),/Nombre de la categoría/);assert.deepEqual(s.state,before);
+  assert.throws(()=>s.apply('invalid-supplier','supplier',{name:'Tampoco se guarda',taxId:'123',category:'__new__',newCategoryName:'Carnes'}),/RUC/);assert.deepEqual(s.state,before);
+});
+
+test('Category validation prevents built-in, case and accent duplicates and reserved names',()=>{
+  const s=setup();s.apply('custom','supplierCategory',{name:'Lácteos'});const before=structuredClone(s.state);
+  for(const name of ['pescado','Servicios (gas y agua)','LACTEOS','__new__','x'.repeat(61)])assert.throws(()=>s.apply('bad-'+name.slice(0,10),'supplierCategory',{name}));
+  assert.deepEqual(s.state,before);
+});
+
+test('Unused custom categories support deletion and recovery while assigned categories explain dependencies',()=>{
+  const s=setup();s.apply('custom','supplierCategory',{name:'Carnes'});s.apply('assign','supplier',{id:'supplier',name:'Proveedor ficticio',category:'Carnes'});
+  assert.throws(()=>s.apply('blocked','delete',{entity:'supplierCategories',targetId:'custom'}),/asignada a proveedores/);
+  s.apply('unassign','supplier',{id:'supplier',name:'Proveedor ficticio',category:'Sin categoría'});s.apply('deleted','delete',{entity:'supplierCategories',targetId:'custom'});
+  assert.ok(!P.categoryNames(s.state).includes('Carnes'));
+  s.apply('restore','restore',{trashId:'deleted'});assert.ok(P.categoryNames(s.state).includes('Carnes'));
+  s.apply('deleted-again','delete',{entity:'supplierCategories',targetId:'custom'});s.apply('replacement','supplierCategory',{name:'CARNES'});
+  const before=structuredClone(s.state);assert.throws(()=>s.apply('conflict','restore',{trashId:'deleted-again'}),/Ya existe una categoría/);assert.deepEqual(s.state,before);
+});

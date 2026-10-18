@@ -1,8 +1,8 @@
 // Editing/deletion rules shared by the server and the deletion preview.
 (() => {
-  const collections = ['suppliers', 'ingredients', 'orders', 'receptions', 'movements', 'recipes','reservations','preparedWastes','supplierDebts','supplierPayments'];
+  const collections = ['suppliers', 'ingredients', 'orders', 'receptions', 'movements', 'recipes','reservations','preparedWastes','supplierDebts','supplierPayments','supplierCategories'];
   function prepare(s) {
-    s.reservations ||= [];s.preparedWastes ||= [];s.supplierDebts ||= [];s.supplierPayments ||= [];
+    s.reservations ||= [];s.preparedWastes ||= [];s.supplierDebts ||= [];s.supplierPayments ||= [];s.supplierCategories ||= [];
     const balances = {};
     for (const m of s.movements) {
       const before = balances[m.ingredientId] || 0;
@@ -75,6 +75,7 @@
   function deletion(s, entity, targetId, { fail, find }) {
     if (!collections.includes(entity)) fail('Registro no eliminable.');
     const target = find(s[entity], targetId, 'Registro'), bundle = Object.fromEntries(collections.map(c => [c, []]));
+    if(entity==='supplierCategories'&&s.suppliers.some(p=>p.category===target.name))fail('Esta categoría está asignada a proveedores. Cámbialos a otra categoría antes de eliminarla.');
     if (entity === 'suppliers' && s.orders.some(o => o.supplierId === targetId)) fail('Este proveedor tiene compras. Reasigna o elimina esas compras antes de eliminar el proveedor.');
     if (entity === 'suppliers' && s.ingredients.some(i => i.supplierId === targetId)) fail('Este proveedor está asignado a insumos. Cambia su proveedor desde Inventario antes de eliminarlo.');
     if(entity==='suppliers'&&s.supplierDebts.some(d=>d.supplierId===targetId))fail('Este proveedor tiene deudas anteriores registradas. Corrígelas o elimínalas primero.');
