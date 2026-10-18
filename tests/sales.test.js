@@ -229,7 +229,7 @@ test('Supplier profiles render linked purchases, goods and accounts with escaped
     supplierProfile='supplier';
   `,context);
   const profile=vm.runInContext('V.Proveedores()',context);
-  for(const label of ['Historial de compras','Insumos que suministra','Deudas y vencimientos','GUIA FICTICIA','Registrar abono'])assert.ok(profile.includes(label));
+  for(const label of ['Historial de compras','Insumos que suministra','Deudas y vencimientos','GUIA FICTICIA','Registrar pago'])assert.ok(profile.includes(label));
   assert.ok(profile.includes('&lt;script&gt;dato&lt;/script&gt;'));assert.ok(!profile.includes('<script>dato'));
   for(const label of ['Evaluaciones de entregas','Cumplimiento de cantidades','Historial de precios','4 de 5 estrellas','50%'])assert.ok(profile.includes(label));
   assert.ok(profile.includes('&lt;img src=x onerror=alert(1)&gt;'));assert.ok(!profile.includes('<img src=x'));
@@ -239,7 +239,29 @@ test('Supplier profiles render linked purchases, goods and accounts with escaped
   assert.match(vm.runInContext("V['Precios de insumos']()",context),/GUIA FICTICIA/);
   assert.ok(!vm.runInContext('V.Inicio()',context).includes('Mercadería recibida hoy'));
   assert.ok(!vm.runInContext('homeGreeting()',context).includes('mercadería'));
-  assert.match(vm.runInContext("V['Cuentas por pagar']()",context),/Saldo pendiente confirmado/);
+  assert.match(vm.runInContext("V['Cuentas por pagar']()",context),/Deuda pendiente/);
+});
+
+test('Cash receipts are absent from every debt filter while retained in supplier payment history',()=>{
+  const context=app();
+  vm.runInContext(`
+    const command=(id,type,payload)=>{OPS.state=OpsCore.apply(OPS.state,{id,type,payload}).state};
+    command('s','supplier',{name:'Proveedor de prueba',paymentMode:'Crédito',creditDays:7});
+    command('i','ingredient',{name:'Insumo de prueba',unit:'kg'});
+    for(const id of ['cash','credit']){
+      command('o-'+id,'order',{supplierId:'s',date:Core.dateKey(),lines:[{ingredientId:'i',quantity:2,unit:'kg',unitCost:10}]});
+      command('r-'+id,'receive',{orderId:'o-'+id,date:Core.dateKey(),reference:id==='cash'?'DOCUMENTO-CONTADO-PRUEBA':'DOCUMENTO-CREDITO-PRUEBA',paymentMode:id==='cash'?'Contado':'Crédito',dueDate:Core.shiftDay(Core.dateKey(),7),lines:[{lineId:'o-'+id+'/0',quantity:2,unitCost:10}]});
+    }
+  `,context);
+  for(const filter of ['Pendientes','Todas','Vencidas','Pagadas']){
+    vm.runInContext('payableFilter='+JSON.stringify(filter),context);
+    assert.ok(!vm.runInContext("V['Cuentas por pagar']()",context).includes('DOCUMENTO-CONTADO-PRUEBA'));
+  }
+  assert.match(vm.runInContext("payablePaymentsTable('s')",context),/DOCUMENTO-CONTADO-PRUEBA/);
+  assert.match(vm.runInContext("payablePaymentsTable('s')",context),/Corregir forma de pago/);
+  assert.match(vm.runInContext('opReceiptReference()',context),/Si no tienes uno, déjalo vacío/);
+  assert.match(vm.runInContext("opLotInput('lot_0')",context),/Si no lo indica, déjalo vacío/);
+  assert.ok(!vm.runInContext('opReceiptReference()',context).includes('required'));
 });
 
 test('Excel export creates a readable workbook with numeric totals and matching filters', () => {

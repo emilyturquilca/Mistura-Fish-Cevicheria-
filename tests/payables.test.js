@@ -90,10 +90,47 @@ test('Partial receipts create independent accounts at their real quantities and 
   const s=setup();s.buy();s.receive();s.receive('second','order',5,22);
   const data=P.summary(s.state,'supplier',day);assert.equal(data.received,210);assert.equal(data.pending,210);assert.equal(data.accounts.length,2);assert.equal(O.stock(s.state,'fish'),10);assert.equal(s.state.ingredients[0].cost,21);
 });
-test('Cash terms mean due on receipt, not automatically paid',()=>{
+test('Cash purchases are paid and cannot receive a duplicate manual payment',()=>{
   const s=setup();s.buy();s.receive('received','order',5,20,{paymentMode:'Contado'});
-  const a=P.accounts(s.state,day)[0];assert.equal(a.status,'Vence hoy');assert.equal(a.dueDate,day);assert.equal(a.balance,100);
-  s.pay('payment',100,{method:'Efectivo'});assert.equal(P.accounts(s.state,day)[0].status,'Pagada');assert.equal(O.stock(s.state,'fish'),5);
+  const a=P.accounts(s.state,day)[0];assert.equal(a.status,'Pagada');assert.equal(a.balance,0);assert.equal(a.paid,100);assert.equal(a.cashPaid,100);assert.equal(a.manualPaid,0);
+  assert.equal(P.summary(s.state,'supplier','2026-11-01').pending,0);assert.equal(P.summary(s.state,'supplier','2026-11-01').overdue,0);assert.equal(P.summary(s.state,'supplier',day,true).accounts.length,0);
+  const before=structuredClone(s.state);assert.throws(()=>s.pay('duplicate',100),/ya está pagada/);assert.deepEqual(s.state,before);assert.equal(O.stock(s.state,'fish'),5);
+  const history=P.paymentHistory(s.state,'supplier');assert.equal(history.length,1);assert.equal(history[0].source,'cash');assert.equal(history[0].amount,100);assert.equal(P.paymentHistory(s.state,'supplier',true).length,0);
+});
+
+test('Existing manual payments count once when corrected to cash and are retained when switched back to credit',()=>{
+  const s=setup();s.buy();s.receive();s.pay('partial',40);
+  s.apply('cash','payableTerms',{id:'received',paymentMode:'Contado'});
+  const a=P.accounts(s.state)[0];assert.equal(a.manualPaid,40);assert.equal(a.cashPaid,60);assert.equal(a.paid,100);assert.equal(a.balance,0);assert.equal(P.paymentHistory(s.state).reduce((n,p)=>n+p.amount,0),100);
+  s.apply('credit','payableTerms',{id:'received',paymentMode:'Crédito',dueDate:'2026-10-22'});
+  assert.equal(P.accounts(s.state)[0].balance,60);assert.equal(P.accounts(s.state)[0].manualPaid,40);assert.equal(P.paymentHistory(s.state).length,1);
+});
+
+test('Legacy cash accounts with complete manual payments do not duplicate paid history',()=>{
+  const s=setup();s.buy();s.receive();s.pay('paid',100);s.state.receptions[0].paymentMode='Contado';
+  const before=structuredClone(s.state),a=P.accounts(s.state)[0];assert.equal(a.paid,100);assert.equal(a.cashPaid,0);assert.equal(P.paymentHistory(s.state).length,1);assert.deepEqual(s.state,before);
+  s.apply('correct-payment','supplierPayment',{id:'paid',accountId:'reception/received',amount:90,date:day,method:'Transferencia'});
+  assert.equal(P.accounts(s.state)[0].paid,100);assert.equal(P.accounts(s.state)[0].cashPaid,10);
+});
+
+test('Receipt corrections keep cash paid but cannot conceal an overpayment from manual legacy records',()=>{
+  const s=setup();s.buy();s.receive('received','order',5,20,{paymentMode:'Contado'});
+  s.apply('edit-cost','editReception',{id:'received',date:day,lines:[{lineId:'order/0',quantity:5,unitCost:22}]});
+  assert.equal(P.accounts(s.state)[0].paid,110);assert.equal(P.accounts(s.state)[0].balance,0);assert.equal(P.paymentHistory(s.state)[0].amount,110);assert.equal(O.stock(s.state,'fish'),5);
+  const legacy=setup();legacy.buy();legacy.receive();legacy.pay('paid',100);legacy.state.receptions[0].paymentMode='Contado';
+  const before=structuredClone(legacy.state);assert.throws(()=>legacy.apply('too-low','editReception',{id:'received',date:day,lines:[{lineId:'order/0',quantity:5,unitCost:10}]}),/superarían/);assert.deepEqual(legacy.state,before);
+});
+
+test('Deleting and restoring cash receipts recovers stock and history without fake manual payment records',()=>{
+  const s=setup();s.buy();s.receive('received','order',5,20,{paymentMode:'Contado'});
+  s.apply('delete-cash','delete',{entity:'receptions',targetId:'received'});assert.equal(P.accounts(s.state).length,0);assert.equal(P.paymentHistory(s.state).length,0);assert.equal(O.stock(s.state,'fish'),0);
+  s.apply('restore-cash','restore',{trashId:'delete-cash'});assert.equal(P.accounts(s.state)[0].balance,0);assert.equal(P.paymentHistory(s.state).length,1);assert.equal(s.state.supplierPayments.length,0);assert.equal(O.stock(s.state,'fish'),5);
+});
+
+test('Mixed cash and credit deliveries leave only credit debt pending and overdue',()=>{
+  const s=setup();s.buy();s.receive('cash','order',5,20,{paymentMode:'Contado'});s.receive('credit','order',5,22,{paymentMode:'Crédito',dueDate:'2026-10-16'});
+  const total=P.summary(s.state,'supplier','2026-10-17'),debts=P.summary(s.state,'supplier','2026-10-17',true);
+  assert.equal(total.received,210);assert.equal(total.paid,100);assert.equal(total.pending,110);assert.equal(total.overdue,110);assert.equal(debts.accounts.length,1);assert.equal(debts.paid,0);
 });
 test('Abonos reduce debt once, preserve stock and use the same idempotency as purchases',()=>{
   const s=setup();s.buy();s.receive();s.pay();const state=structuredClone(s.state);s.pay();assert.deepEqual(s.state,state);
@@ -124,7 +161,7 @@ test('Changing actual received costs updates debt and stock cost, but cannot red
 });
 test('Paid receipt and purchase deletion is blocked until payments are corrected',()=>{
   const s=setup();s.buy();s.receive();s.pay();
-  for(const [entity,targetId]of [['receptions','received'],['orders','order']])assert.throws(()=>s.apply('delete-'+entity,'delete',{entity,targetId}),/tiene abonos/);
+  for(const [entity,targetId]of [['receptions','received'],['orders','order']])assert.throws(()=>s.apply('delete-'+entity,'delete',{entity,targetId}),/tiene pagos/);
   s.apply('delete-payment','delete',{entity:'supplierPayments',targetId:'payment'});s.apply('delete-order','delete',{entity:'orders',targetId:'order'});
   assert.equal(P.accounts(s.state).length,0);assert.equal(O.stock(s.state,'fish'),0);
   s.apply('restore-order','restore',{trashId:'delete-order'});s.apply('restore-payment','restore',{trashId:'delete-payment'});assert.equal(P.accounts(s.state)[0].balance,60);
@@ -154,7 +191,7 @@ test('Opening debts and their abonos affect supplier balances without adding inv
   s.apply('old','supplierDebt',debt);assert.equal(P.summary(s.state,'supplier',day).overdue,75);assert.equal(O.stock(s.state,'fish'),0);
   s.pay('paid-old',25,{accountId:'debt/old'});assert.equal(P.summary(s.state,'supplier',day).pending,50);
   s.apply('edit-old','supplierDebt',{id:'old',...debt,amount:80});assert.equal(P.summary(s.state,'supplier',day).pending,55);
-  assert.throws(()=>s.apply('delete-old','delete',{entity:'supplierDebts',targetId:'old'}),/tiene abonos/);
+  assert.throws(()=>s.apply('delete-old','delete',{entity:'supplierDebts',targetId:'old'}),/tiene pagos/);
 });
 test('Opening debts cannot duplicate an existing receipt or another opening document',()=>{
   const s=setup();s.buy();s.receive();const debt={supplierId:'supplier',date:day,dueDate:day,reference:'GUIA-received',amount:100};

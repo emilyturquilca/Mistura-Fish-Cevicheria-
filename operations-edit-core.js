@@ -80,7 +80,7 @@
     if (entity === 'suppliers' && s.ingredients.some(i => i.supplierId === targetId)) fail('Este proveedor está asignado a insumos. Cambia su proveedor desde Inventario antes de eliminarlo.');
     if(entity==='suppliers'&&s.supplierDebts.some(d=>d.supplierId===targetId))fail('Este proveedor tiene deudas anteriores registradas. Corrígelas o elimínalas primero.');
     const accountIds=entity==='supplierDebts'?['debt/'+targetId]:entity==='receptions'?['reception/'+targetId]:entity==='orders'?s.receptions.filter(r=>r.orderId===targetId).map(r=>'reception/'+r.id):[];
-    if(s.supplierPayments.some(p=>accountIds.includes(p.accountId)))fail('Esta cuenta tiene abonos. Corrige o elimina sus abonos antes de eliminar la deuda o la compra.');
+    if(s.supplierPayments.some(p=>accountIds.includes(p.accountId)))fail('Esta cuenta tiene pagos. Corrige o elimina sus pagos antes de eliminar la deuda o la compra.');
     if (entity === 'ingredients' && (s.orders.some(o => o.lines.some(l => l.ingredientId === targetId)) || s.movements.some(m => m.ingredientId === targetId&&m.kind==='Venta') || s.recipes.some(r => r.lines.some(l => l.ingredientId === targetId)))) fail('Este insumo tiene compras, ventas o recetas. Corrige o elimina los registros relacionados antes de eliminar el insumo.');
     if(entity==='movements'&&target.kind==='Venta')fail('El consumo viene de Loyverse. Corrige el stock físico desde Inventario.');
     if (entity === 'movements' && target.kind === 'Recepción') return deletion(s, 'receptions', target.receptionId, { fail, find });
