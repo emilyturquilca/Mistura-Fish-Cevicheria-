@@ -29,6 +29,7 @@ if(process.argv.includes('--seed-operations')){
   seed('qa-reception','receive',{orderId:'qa-order',date:today,reference:'QA-GUIA',lines:[{lineId:'qa-order/0',quantity:10,unitCost:20,lot:'QA-LOTE'}]});
   seed('qa-waste','waste',{ingredientId:'qa-fish',quantity:200,unit:'g',date:today,note:'Merma de prueba'});
   seed('qa-recipe','recipe',{productKey:'ceviche',portions:1,lines:[{ingredientId:'qa-fish',quantity:200,unit:'g',yield:80}]});
+  seed('qa-reservation','reservation',{name:'Mesa de prueba',phone:'',guests:4,plannedAt:today+'T13:00:00-05:00',status:'Pendiente',note:'',lines:[{productKey:'ceviche',quantity:4}]});
 }
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, 'http://localhost');
@@ -69,13 +70,13 @@ const server = createServer(async (request, response) => {
     return;
   }
   const files = { '/': 'index.html', '/dark': 'index.html', '/index.html': 'index.html', '/sales-core.js': 'sales-core.js', '/operations-core.js': 'operations-core.js', '/operations-edit-core.js':'operations-edit-core.js','/restaurant-core.js':'restaurant-core.js','/restaurant-ui.js':'restaurant-ui.js', '/payables-core.js':'payables-core.js', '/payables-ui.js':'payables-ui.js', '/operations-edit-ui.js':'operations-edit-ui.js', '/operations-ui.js': 'operations-ui.js', '/assets/xlsx.full.min.js': 'assets/xlsx.full.min.js' };
+  Object.assign(files,{'/home-core.js':'home-core.js','/home-ui.js':'home-ui.js','/home.css':'home.css','/assets/mistura-logo.png':'assets/mistura-logo.png'});
   const file = files[url.pathname];
   if (!file) { response.writeHead(404); response.end(); return; }
   try {
     let content = await readFile(new URL(file, root));
     if (file === 'index.html') content = content.toString().replace('<title>', '<title>PRUEBA CON DATOS FICTICIOS · ').replace('iniciar();', "sessionStorage.setItem('mf_clave','local-preview-only');iniciar();").replace('<body>', '<body style="padding-top:28px"><div style="position:fixed;top:0;left:0;right:0;height:28px;z-index:100;background:#ffe1a8;color:#352300;text-align:center;padding:4px">PRUEBA LOCAL · Datos ficticios</div>');
-    if (url.pathname === '/dark') content = content.replace('<html lang="es">', '<html lang="es" data-theme="dark">');
-    response.writeHead(200, { 'Content-Type': file.endsWith('.html') ? 'text/html; charset=utf-8' : 'text/javascript; charset=utf-8' });
+    response.writeHead(200, { 'Content-Type': file.endsWith('.html') ? 'text/html; charset=utf-8' : file.endsWith('.css')?'text/css; charset=utf-8':file.endsWith('.png')?'image/png':'text/javascript; charset=utf-8' });
     response.end(content);
   } catch { response.writeHead(500); response.end('Preview unavailable'); }
 });
