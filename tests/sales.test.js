@@ -123,7 +123,7 @@ test('exports keep numbers numeric, include all receipts and quote CSV safely', 
 
 function app() {
   const elements = new Map();
-  const element = () => ({ innerHTML: '', querySelectorAll: () => [], appendChild() {}, remove() {}, click() {} });
+  const element = () => ({ innerHTML: '', querySelectorAll: () => [], appendChild() {}, remove() {}, click() {}, setAttribute() {} });
   const storage = new Map();
   const context = vm.createContext({
     console, Date, Intl, URL, Blob, structuredClone, setTimeout() {},setInterval() {},
@@ -137,10 +137,12 @@ function app() {
   vm.runInContext(readFileSync(new URL('../operations-edit-core.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../restaurant-core.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../payables-core.js', import.meta.url), 'utf8'), context);
+  vm.runInContext(readFileSync(new URL('../home-core.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../operations-ui.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../operations-edit-ui.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../restaurant-ui.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../payables-ui.js', import.meta.url), 'utf8'), context);
+  vm.runInContext(readFileSync(new URL('../home-ui.js', import.meta.url), 'utf8'), context);
   if (existsSync(new URL('../assets/xlsx.full.min.js', import.meta.url))) {
     vm.runInContext(readFileSync(new URL('../assets/xlsx.full.min.js', import.meta.url), 'utf8'), context);
   }
@@ -167,6 +169,43 @@ test('all UI views render, daily navigation updates the chosen total, and labels
   assert.equal(vm.runInContext('sel(P.k).length', context), 1);
   vm.runInContext("elegirPeriodo('hoy')", context);
   assert.match(vm.runInContext('period()', context), /Hoy ·/);
+});
+
+test('Home voice fallback navigates without writes and does not autoplay or start a microphone',()=>{
+  const context=app();
+  assert.match(vm.runInContext('V.Inicio()',context),/Temporada de pesca · Ilo/);
+  assert.equal(vm.runInContext('homeListening',context),false);
+  vm.runInContext('homeStartVoice()',context);
+  assert.match(vm.runInContext('homeVoiceMessage',context),/no está disponible/);
+  vm.runInContext('homeRead()',context);
+  assert.match(vm.runInContext('homeVoiceMessage',context),/no puede leer/);
+  assert.equal(vm.runInContext("homeRunCommand('pagar deudas')",context),false);
+  vm.runInContext("homeRunCommand('abrir inventario')",context);
+  assert.equal(vm.runInContext('view',context),'Inventario');
+  assert.equal(vm.runInContext('OPS.state.movements.length',context),0);
+});
+
+test('Voice recognition stops on navigation and late browser events cannot navigate again',()=>{
+  const context=app();
+  vm.runInContext(`window.SpeechRecognition=class{constructor(){globalThis.recognition=this}start(){this.onstart()}abort(){this.aborted=true;this.onend?.()}};homeStartVoice()`,context);
+  assert.equal(vm.runInContext('homeListening',context),true);
+  vm.runInContext("recognition.onresult({results:[[{transcript:'ver proveedores'}]]})",context);
+  assert.equal(vm.runInContext('view',context),'Proveedores');
+  assert.equal(vm.runInContext('homeListening',context),false);
+  assert.equal(vm.runInContext('recognition.aborted',context),true);
+  vm.runInContext("recognition.onresult({results:[[{transcript:'ver deudas'}]]})",context);
+  assert.equal(vm.runInContext('view',context),'Proveedores');
+});
+
+test('Stopping a spoken greeting ignores the browser cancellation error and keeps the stop status',()=>{
+  const context=app();
+  vm.runInContext(`window.SpeechSynthesisUtterance=class{constructor(text){this.text=text}};window.speechSynthesis={getVoices:()=>[{lang:'es-PE'}],speak(u){globalThis.spoken=u},cancel(){if(globalThis.spoken)spoken.onerror()}};homeRead()`,context);
+  assert.equal(vm.runInContext('homeSpeaking',context),true);
+  assert.equal(vm.runInContext('spoken.lang',context),'es-PE');
+  assert.match(vm.runInContext('spoken.text',context),/Bienvenido a Mistura Fish/);
+  vm.runInContext('homeStopVoice()',context);
+  assert.equal(vm.runInContext('homeSpeaking',context),false);
+  assert.equal(vm.runInContext('homeVoiceMessage',context),'Voz detenida.');
 });
 
 test('Hourly Excel preserves the selected day and numeric amounts in all 24 hours', () => {

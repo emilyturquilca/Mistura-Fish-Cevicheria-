@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es"><head><meta charset="utf-8">
+<html lang="es" data-theme="dark"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mistura Fish · Panel analítico</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -9,10 +9,12 @@
 <script src="operations-edit-core.js"></script>
 <script src="restaurant-core.js"></script>
 <script src="payables-core.js"></script>
+<script src="home-core.js"></script>
 <script src="operations-ui.js"></script>
 <script src="operations-edit-ui.js"></script>
 <script src="restaurant-ui.js"></script>
 <script src="payables-ui.js"></script>
+<script src="home-ui.js"></script>
 <style>
 :root{--bg:#f3f8fa;--card:#fff;--ink:#0d2b3e;--mut:#5b7686;--line:#dbe8ee;--side:#0b2a40;--sea:#0e7c9b;--tq:#19b5b0;--warm:#f08a4b;--sand:#e8f4f6;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0a1b28;--card:#10293a;--ink:#e6f2f6;--mut:#8fb0bf;--line:#1d3d52;--sand:#14344a}}
@@ -48,8 +50,8 @@ canvas{max-height:260px}.empty{padding:24px;text-align:center;color:var(--mut)}
 .op-actions{display:inline-flex;gap:5px;flex-wrap:wrap}.op-delete{color:var(--ink);border-color:var(--warm)}dialog{width:min(850px,94vw);max-height:88vh;overflow:auto;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);padding:20px}dialog::backdrop{background:#00131fb3}dialog h2{margin:0;flex:1}dialog .op-form{margin-top:14px}dialog fieldset{margin-bottom:12px}dialog .notice{white-space:normal}dialog table{min-width:500px}
 .supplier-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:14px}.supplier-card h2{margin:0}.supplier-name{border:0;background:none;padding:0;color:var(--sea);font:inherit;font-size:17px;font-weight:700;text-align:left;cursor:pointer;overflow-wrap:anywhere}.supplier-name:focus-visible{outline:2px solid var(--warm)}.supplier-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}.supplier-summary dt{font-size:12px;color:var(--mut)}.supplier-summary dd{margin:3px 0 0;font-size:17px;font-weight:700}.supplier-section-nav{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}.supplier-section{scroll-margin-top:20px}
 .supplier-category-filter{min-width:0;max-width:100%}.supplier-category-filter select{max-width:100%}.supplier-category-name{flex:1;min-width:0;overflow-wrap:anywhere}.supplier-card .tag{overflow-wrap:anywhere}
-</style></head><body>
-<aside id="nav"><div class="logo">Mistura Fish<small>Panel analítico · Loyverse</small></div></aside>
+</style><link rel="stylesheet" href="home.css"></head><body>
+<aside id="nav"><div class="logo"><img src="assets/mistura-logo.png" width="110" height="110" alt="Mistura Fish Cevichería"><small>Ilo · Moquegua · Perú</small></div></aside>
 <main id="app"></main>
 <script>
 // ===== Datos reales (API de Loyverse vía /api/loyverse) =====
@@ -94,10 +96,10 @@ async function sincronizar(forzar,desde){
   if(guardar())MSG=`Sincronizado: ${counts.added} recibos nuevos, ${counts.updated} actualizados y ${counts.cancelled} anulados retirados.`;
  }catch(e){if(e.message=='AUTH')return salir();MSG=/^Falta el token/.test(e.message)?(forzar||desde?'Falta conectar Loyverse: guarda el token en esta pantalla o sube un archivo de datos.':''):'No se pudo sincronizar ('+e.message+'). Mostrando datos guardados.'}
  finally{syncing=false;hidratar();if(clave())render()}}
-function login(){sessionStorage.removeItem(CL);localStorage.removeItem(CL);document.getElementById('app').innerHTML='<div class="card" style="max-width:320px;margin:60px auto"><h2>Mistura Fish</h2><p><input type="password" id="clv" placeholder="Contraseña" style="width:100%" onkeydown="if(event.key==\'Enter\')entrar()"></p><button class="btn" onclick="entrar()">Entrar</button><p class="na" id="lerr"></p></div>'}
+function login(){sessionStorage.removeItem(CL);localStorage.removeItem(CL);document.getElementById('app').innerHTML='<div class="card" style="max-width:320px;margin:60px auto"><img class="login-logo" src="assets/mistura-logo.png" width="150" height="150" alt="Mistura Fish Cevichería"><h2>Bienvenido a Mistura Fish</h2><p><input type="password" id="clv" placeholder="Contraseña" style="width:100%" onkeydown="if(event.key==\'Enter\')entrar()"></p><button class="btn" onclick="entrar()">Entrar</button><p class="na" id="lerr"></p></div>'}
 async function entrar(){sessionStorage.setItem(CL,document.getElementById('clv').value);
  try{await api('/ping');arrancar()}catch(e){sessionStorage.removeItem(CL);document.getElementById('lerr').textContent=e.message=='AUTH'?'Contraseña incorrecta':'No se pudo conectar: '+e.message}}
-function salir(){sessionStorage.removeItem(CL);localStorage.removeItem(CL);login()}
+function salir(){homeStopVoice();sessionStorage.removeItem(CL);localStorage.removeItem(CL);login()}
 function cargarHist(){const v=document.getElementById('hd').value;if(!v){MSG='Elige la fecha desde la cual cargar.';return render()}sincronizar(true,Core.dayStart(v).toISOString())}
 function guardar(){try{localStorage.setItem(K,JSON.stringify(DB));return true}catch{MSG='Aviso: el almacenamiento del navegador está lleno. Usa un historial más corto.';return false}}
 function guardarToken(){const t=document.getElementById('tk').value.trim();if(!t){MSG='Pega el token de Loyverse.';return render()}localStorage.setItem(TK,t);sincronizar(true)}
@@ -130,7 +132,7 @@ function importar(t){const l=t.split('\n')[0],d=(l.match(/;/g)||[]).length>(l.ma
 async function archivo(inp){const f=inp.files[0];if(!f)return;
  try{let t;if(/\.xlsx?$/i.test(f.name)){const w=XLSX.read(await f.arrayBuffer());t=XLSX.utils.sheet_to_csv(w.Sheets[w.SheetNames[0]])}else t=await f.text();importar(t)}
  catch(e){MSG='No se pudo leer el archivo: '+e.message;render()}}
-async function arrancar(){hidratar();if(!serverConfigured&&!localStorage.getItem(TK)&&!VENTAS.length)view='Sincronizar Loyverse';render();await opLoad(true);if(clave())sincronizar(false)}
+async function arrancar(){hidratar();render();await opLoad(true);if(clave())sincronizar(false)}
 async function iniciar(){localStorage.removeItem(CL);if(!clave())return login();try{await api('/ping');arrancar()}catch(e){salir()}}
 // ===== Utilidades =====
 const S=x=>'S/ '+x.toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -143,10 +145,10 @@ function sel(k){const interval=range(k);return VENTAS.filter(v=>Core.inRange(v,i
 function group(arr,keyFn,valFn){const m={};arr.forEach(x=>{const k=keyFn(x);m[k]=(m[k]||0)+valFn(x)});return m}
 function lines(vs){return vs.flatMap(v=>v.items.map(i=>({...i,pr:PROD[i.p],v})))}
 const P={k:'hoy',day:Core.dateKey(),metric:'net',from:Core.shiftDay(Core.dateKey(),-7),to:Core.dateKey()};
-let view='Inventario',charts=[],renderRevision=0,q='',fp='',openId=null,step=0,lastImport=null;
-const MENU=['Inventario','Compras','Proveedores','Cuentas por pagar','Reservaciones','Mermas','Escandallos','Rentabilidad','Sincronizar Loyverse','Dashboard','Ventas','Ventas por hora','Productos','Reportes','Configuración'];
+let view='Inicio',charts=[],renderRevision=0,q='',fp='',openId=null,step=0,lastImport=null;
+const MENU=['Inicio','Inventario','Compras','Proveedores','Cuentas por pagar','Reservaciones','Mermas','Escandallos','Rentabilidad','Sincronizar Loyverse','Dashboard','Ventas','Ventas por hora','Productos','Reportes','Configuración'];
 function nav(){const n=document.getElementById('nav');n.querySelectorAll('button,.nav-label').forEach(b=>b.remove());
- MENU.forEach((m,i)=>{if(i==0||m==='Dashboard'){const label=document.createElement('div');label.className='nav-label';label.textContent=i==0?'PRIMERA VERSIÓN':'CONSULTA Y REPORTES';n.appendChild(label)}const b=document.createElement('button');b.textContent=m;b.className=m==view?'on':'';b.onclick=()=>{view=m;openId=null;render()};n.appendChild(b)})}
+ MENU.forEach((m,i)=>{if(i==0||m==='Dashboard'){const label=document.createElement('div');label.className='nav-label';label.textContent=i==0?'MI RESTAURANTE':'CONSULTA Y REPORTES';n.appendChild(label)}const b=document.createElement('button');b.textContent=m;b.className=m==view?'on':'';b.onclick=()=>homeNavigate(m);n.appendChild(b)})}
 function elegirPeriodo(k){P.k=k;if(k=='hoy')P.day=Core.dateKey();render()}
 function elegirDia(day){if(!Core.dateKey(Core.dayStart(day))||day>Core.dateKey())return;P.day=day;P.k=day==Core.dateKey()?'hoy':'dia';render()}
 function moverDia(offset){elegirDia(Core.shiftDay(P.k=='hoy'?Core.dateKey():P.day,offset))}
@@ -217,7 +219,7 @@ Reportes(){const vs=sel(P.k);if(!vs.length)return '<h1>Reportes</h1>'+period()+n
  <p class="k">Los recibos anulados se retiran y las devoluciones se restan. Se actualizan también los recibos existentes. El beneficio bruto requiere costos en los recibos.</p><button class="pill" onclick="salir()">Cerrar sesión</button></div>`},
 Configuración(){return `<h1>Configuración</h1><p class="sub">Mistura Fish · alcance y conexiones</p><div class="grid g2"><div class="card"><h2>Primera versión</h2><p>Inventario → proveedores y compras → recetas y mermas → rentabilidad → Loyverse. Reservaciones con pedidos para planificar la preparación y las compras.</p><p>${OPS.configured?'Base PostgreSQL compartida conectada.':'Base compartida pendiente de conexión.'} ${serverConfigured?'Token de Loyverse configurado en el servidor.':''}</p><p class="k">Acceso con la contraseña del panel. Puedes editar registros y deshacer los borrados. El inventario se descuenta con las ventas según las recetas configuradas. El acceso sigue usando la contraseña compartida.</p></div>
  <div class="card"><h2>Segunda etapa · pendiente</h2><p>Producción → cocina/comandas → personal → clientes/fidelización → pronóstico.</p><p class="k">Estos módulos quedan para la siguiente etapa.</p></div><div class="card"><button class="pill" onclick="view='Papelera';render()">Recuperar registros eliminados</button><h2>Catálogo de Loyverse</h2><p>${CATS.map(c=>`<span class="tag">${esc(c)}</span> `).join('')}</p><h2>Métodos de pago</h2>${PAY.map(c=>`<span class="tag">${esc(c)}</span> `).join('')}</div></div>`}};
-Object.assign(V,OperationsViews,RestaurantViews,SupplierViews);
+Object.assign(V,OperationsViews,RestaurantViews,SupplierViews,HomeViews);
 function ventasExportar(filtrar){return sel(P.k).filter(v=>!filtrar||((v.id+v.cli).toLowerCase().includes(q.toLowerCase())&&(!fp||v.pay==fp)))}
 function nombreReporte(extension){const[s,e]=range(P.k);return `ventas-${Core.dateKey(s)}-a-${Core.dateKey(new Date(e-1))}.${extension}`}
 function exportExcel(filtrar=false){
