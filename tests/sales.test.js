@@ -142,6 +142,7 @@ function app() {
   vm.runInContext(readFileSync(new URL('../operations-edit-ui.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../restaurant-ui.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../payables-ui.js', import.meta.url), 'utf8'), context);
+  vm.runInContext(readFileSync(new URL('../supplier-performance-ui.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../home-ui.js', import.meta.url), 'utf8'), context);
   if (existsSync(new URL('../assets/xlsx.full.min.js', import.meta.url))) {
     vm.runInContext(readFileSync(new URL('../assets/xlsx.full.min.js', import.meta.url), 'utf8'), context);
@@ -224,12 +225,20 @@ test('Supplier profiles render linked purchases, goods and accounts with escaped
     command('supplier','supplier',{name:'Proveedor ficticio',paymentMode:'Crédito',creditDays:7,paymentNotes:'<script>dato</script>'});
     command('ingredient','ingredient',{name:'Insumo ficticio',unit:'kg',supplierId:'supplier',stock:0,unitCost:0});
     command('order','order',{supplierId:'supplier',date:Core.dateKey(),lines:[{ingredientId:'ingredient',quantity:2,unit:'kg',unitCost:10}]});
-    command('receipt','receive',{orderId:'order',date:Core.dateKey(),reference:'GUIA FICTICIA',lines:[{lineId:'order/0',quantity:1,unitCost:10}]});
+    command('receipt','receive',{orderId:'order',date:Core.dateKey(),reference:'GUIA FICTICIA',punctuality:4,quality:3,evaluationNote:'<img src=x onerror=alert(1)>',lines:[{lineId:'order/0',quantity:1,unitCost:10}]});
     supplierProfile='supplier';
   `,context);
   const profile=vm.runInContext('V.Proveedores()',context);
   for(const label of ['Historial de compras','Insumos que suministra','Deudas y vencimientos','GUIA FICTICIA','Registrar abono'])assert.ok(profile.includes(label));
   assert.ok(profile.includes('&lt;script&gt;dato&lt;/script&gt;'));assert.ok(!profile.includes('<script>dato'));
+  for(const label of ['Evaluaciones de entregas','Cumplimiento de cantidades','Historial de precios','4 de 5 estrellas','50%'])assert.ok(profile.includes(label));
+  assert.ok(profile.includes('&lt;img src=x onerror=alert(1)&gt;'));assert.ok(!profile.includes('<img src=x'));
+  assert.match(vm.runInContext('V.Inventario()',context),/Recibir productos/);
+  assert.match(vm.runInContext('V.Inventario()',context),/Ver precios/);
+  vm.runInContext("ingredientHistory='ingredient'",context);
+  assert.match(vm.runInContext("V['Precios de insumos']()",context),/GUIA FICTICIA/);
+  assert.ok(!vm.runInContext('V.Inicio()',context).includes('Mercadería recibida hoy'));
+  assert.ok(!vm.runInContext('homeGreeting()',context).includes('mercadería'));
   assert.match(vm.runInContext("V['Cuentas por pagar']()",context),/Saldo pendiente confirmado/);
 });
 

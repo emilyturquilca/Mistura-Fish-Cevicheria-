@@ -13,6 +13,75 @@ function setup(){
   const pay=(id='payment',amount=40,extra={})=>apply(id,'supplierPayment',{accountId:'reception/received',amount,date:day,method:'Transferencia',reference:'OPERACION-'+id,...extra});
   return {apply,buy,receive,pay,get state(){return state}};
 }
+
+test('Delivery stars save with a receipt, stay idempotent, and exclude unscored legacy deliveries',()=>{
+  const s=setup();s.buy();s.receive('rated','order',5,20,{punctuality:'4',quality:'5',evaluationNote:'Entrega revisada'});s.receive('unrated','order',5,22);
+  const before=structuredClone(s.state);s.receive('rated','order',5,20,{punctuality:1,quality:1});assert.deepEqual(s.state,before);
+  const data=P.performance(s.state,'supplier');assert.deepEqual(data.punctuality,{value:4,count:1});assert.deepEqual(data.quality,{value:5,count:1});assert.equal(O.stock(s.state,'fish'),10);assert.equal(P.summary(s.state,'supplier').pending,210);
+  assert.equal(s.state.receptions[0].evaluationNote,'Entrega revisada');assert.equal(s.state.receptions[1].quality,null);
+});
+
+test('Evaluations can be changed and cleared independently without changing stock, costs, debts or abonos',()=>{
+  const s=setup();s.buy();s.receive();s.pay();const ledger=structuredClone(s.state.movements),accounts=P.accounts(s.state),cost=s.state.ingredients[0].cost;
+  s.apply('rate','supplierEvaluation',{id:'received',punctuality:3,quality:4,evaluationNote:'Faltó hielo'});
+  s.apply('rerate','supplierEvaluation',{id:'received',punctuality:5,quality:2,evaluationNote:'Revisado'});
+  assert.equal(P.performance(s.state,'supplier').punctuality.value,5);
+  s.apply('clear','supplierEvaluation',{id:'received',punctuality:'',quality:'',evaluationNote:''});
+  assert.deepEqual(P.performance(s.state,'supplier').quality,{value:null,count:0});assert.deepEqual(s.state.movements,ledger);assert.deepEqual(P.accounts(s.state),accounts);assert.equal(s.state.ingredients[0].cost,cost);
+});
+
+test('Invalid scores fail atomically, including when sent with a stock-increasing receipt',()=>{
+  const s=setup();s.buy();const before=structuredClone(s.state);
+  for(const score of [0,6,2.5,-1,'NaN',true,[],{}]){
+    assert.throws(()=>s.receive('bad','order',5,20,{quality:score}),/estrellas/);assert.deepEqual(s.state,before);
+  }
+  s.receive();const ratedBefore=structuredClone(s.state);
+  assert.throws(()=>s.apply('wrong','supplierEvaluation',{id:'received',punctuality:6}),/estrellas/);assert.deepEqual(s.state,ratedBefore);
+  assert.throws(()=>s.apply('missing','supplierEvaluation',{id:'absent',quality:5}),/no encontrado/);
+});
+
+test('Received quantities compare each ordered input in its own unit and partial deliveries accumulate',()=>{
+  const s=setup();s.buy();s.receive('a','order',3);s.receive('b','order',2);
+  let q=P.performance(s.state,'supplier').quantities[0];assert.deepEqual([q.ordered,q.received,q.pending,q.percent],[10,5,5,50]);
+  s.apply('liquid','ingredient',{name:'Líquido ficticio',unit:'l'});
+  s.apply('order2','order',{supplierId:'supplier',date:day,lines:[{ingredientId:'liquid',quantity:2,unit:'l',unitCost:4}]});
+  s.apply('liquid-receipt','receive',{orderId:'order2',date:day,lines:[{lineId:'order2/0',quantity:2,unitCost:4}]});
+  const quantities=P.performance(s.state,'supplier').quantities;assert.equal(quantities.length,2);assert.equal(quantities.find(x=>x.ingredientId==='liquid').percent,100);assert.equal(quantities.find(x=>x.ingredientId==='fish').percent,50);
+});
+
+test('Price history compares actual same-supplier costs rather than weighted stock cost or other suppliers',()=>{
+  const s=setup();s.buy();s.receive('first','order',5,20);s.receive('second','order',5,22);
+  s.apply('supplier2','supplier',{name:'Otro proveedor ficticio'});
+  s.apply('order2','order',{supplierId:'supplier2',date:day,lines:[{ingredientId:'fish',quantity:1,unit:'kg',unitCost:99}]});
+  s.receive('third','order2',1,99);
+  const all=P.priceHistory(s.state,{ingredientId:'fish'});assert.deepEqual(all.map(r=>r.previousCost),[null,20,null]);assert.deepEqual(all.map(r=>r.change),[null,2,null]);assert.equal(all[1].percent,10);
+  assert.equal(P.priceHistory(s.state,{supplierId:'supplier2'}).length,1);assert.notEqual(s.state.ingredients[0].cost,22);
+});
+
+test('Price history handles zero prices, decreases and backdated receipts, then recalculates after editing',()=>{
+  const s=setup();s.buy('order',30);s.receive('zero','order',5,0);s.receive('up','order',5,10);s.receive('down','order',5,8);
+  let rows=P.priceHistory(s.state);assert.equal(rows[1].change,10);assert.equal(rows[1].percent,null);assert.equal(rows[2].change,-2);assert.equal(rows[2].percent,-20);
+  s.apply('edit','editReception',{id:'up',date:day,reference:'Corrección ficticia',lines:[{lineId:'order/0',quantity:5,unitCost:12}]});
+  rows=P.priceHistory(s.state);assert.equal(rows[2].previousCost,12);assert.equal(rows[2].change,-4);
+  s.apply('earlier-order','editOrder',{id:'order',supplierId:'supplier',date:'2026-10-14',lines:[{id:'order/0',ingredientId:'fish',quantity:30,unit:'kg',unitCost:20}]});
+  s.receive('backdated','order',5,5,{date:'2026-10-14'});
+  rows=P.priceHistory(s.state);assert.equal(rows[0].receptionId,'backdated');assert.equal(rows[1].previousCost,5);
+});
+
+test('Deleting and restoring receipts removes and restores their stars and price comparisons together',()=>{
+  const s=setup();s.buy();s.receive('first','order',5,20,{quality:4});s.receive('second','order',5,22,{quality:2});
+  s.apply('remove','delete',{entity:'receptions',targetId:'first'});
+  assert.equal(P.performance(s.state,'supplier').quality.value,2);assert.equal(P.priceHistory(s.state)[0].previousCost,null);
+  s.apply('restore','restore',{trashId:'remove'});
+  assert.equal(P.performance(s.state,'supplier').quality.value,3);assert.equal(P.priceHistory(s.state)[1].previousCost,20);
+});
+
+test('Moving a purchase to another supplier clears reviews of the old supplier and reassigns its price history',()=>{
+  const s=setup();s.buy();s.receive('received','order',5,20,{quality:5,punctuality:4});
+  s.apply('supplier2','supplier',{name:'Otro proveedor ficticio'});
+  s.apply('reassign','editOrder',{id:'order',supplierId:'supplier2',date:day,lines:[{id:'order/0',ingredientId:'fish',quantity:10,unit:'kg',unitCost:20}]});
+  assert.equal(P.performance(s.state,'supplier').receptions.length,0);assert.equal(P.performance(s.state,'supplier2').quality.value,null);assert.equal(P.priceHistory(s.state)[0].supplierId,'supplier2');
+});
 test('Only received goods generate a debt, with agreed credit dates and no assumed payment',()=>{
   const s=setup();s.buy();assert.equal(P.accounts(s.state).length,0);assert.equal(O.stock(s.state,'fish'),0);
   s.receive();const a=P.accounts(s.state,day)[0];assert.equal(a.amount,100);assert.equal(a.balance,100);assert.equal(a.paid,0);assert.equal(a.dueDate,'2026-10-22');assert.equal(a.status,'Pendiente');assert.equal(O.stock(s.state,'fish'),5);

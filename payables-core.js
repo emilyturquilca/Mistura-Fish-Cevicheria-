@@ -56,6 +56,39 @@
       return {...a,paid,balance,status:!a.confirmed?'Por confirmar':balance<=0?'Pagada':a.dueDate<today?'Vencida':a.dueDate===today?'Vence hoy':'Pendiente'};
     });
   }
+  function evaluation(p,h){
+    const score=(value,label)=>{
+      if(value==null||value==='')return null;
+      if(!['string','number'].includes(typeof value)||!Number.isInteger(Number(value))||Number(value)<1||Number(value)>5)h.fail(label+': elige de 1 a 5 estrellas o Sin calificar.');
+      return Number(value);
+    };
+    const evaluationNote=String(p.evaluationNote??'').trim();if(evaluationNote.length>300)h.fail('Observación de la entrega: máximo 300 caracteres.');
+    return {punctuality:score(p.punctuality,'Puntualidad'),quality:score(p.quality,'Calidad'),evaluationNote};
+  }
+  function priceHistory(s,{supplierId='',ingredientId=''}={}){
+    const orders=new Map(s.orders.map(o=>[o.id,o])),last=new Map(),rows=[];
+    // The original array position is the final tie-breaker for legacy receipts.
+    const receptions=s.receptions.map((r,index)=>({r,index})).sort((a,b)=>a.r.date.localeCompare(b.r.date)||String(a.r.createdAt||'').localeCompare(String(b.r.createdAt||''))||a.index-b.index);
+    for(const {r} of receptions){
+      const order=orders.get(r.orderId);if(!order)continue;
+      for(const line of r.lines){
+        if((supplierId&&order.supplierId!==supplierId)||(ingredientId&&line.ingredientId!==ingredientId))continue;
+        const key=JSON.stringify([order.supplierId,line.ingredientId]),previous=last.get(key),change=previous==null?null:O().round(line.unitCost-previous,4);
+        rows.push({receptionId:r.id,orderId:order.id,supplierId:order.supplierId,ingredientId:line.ingredientId,date:r.date,reference:r.reference||'',quantity:line.quantity,unitCost:line.unitCost,previousCost:previous??null,change,percent:previous==null||previous===0?null:O().round(change/previous*100,2)});
+        last.set(key,line.unitCost);
+      }
+    }
+    return rows;
+  }
+  function performance(s,supplierId){
+    const orders=s.orders.filter(o=>o.supplierId===supplierId),ids=new Set(orders.map(o=>o.id)),receptions=s.receptions.filter(r=>ids.has(r.orderId));
+    const average=field=>{const rated=receptions.filter(r=>Number.isInteger(r[field])&&r[field]>=1&&r[field]<=5);return {value:rated.length?O().round(rated.reduce((n,r)=>n+r[field],0)/rated.length,1):null,count:rated.length}};
+    const quantities=orders.filter(o=>o.status!=='Anulada').flatMap(o=>o.lines.map(l=>{
+      const received=O().round(receptions.filter(r=>r.orderId===o.id).reduce((n,r)=>n+r.lines.filter(x=>x.lineId===l.id).reduce((sum,x)=>sum+x.quantity,0),0));
+      return {orderId:o.id,orderNumber:o.number,ingredientId:l.ingredientId,ordered:l.quantity,received,pending:O().round(Math.max(0,l.quantity-received)),percent:l.quantity>0?O().round(received/l.quantity*100,1):null};
+    }));
+    return {receptions,punctuality:average('punctuality'),quality:average('quality'),quantities};
+  }
   function summary(s,supplierId,today){
     const list=accounts(s,today).filter(a=>!supplierId||a.supplierId===supplierId),confirmed=list.filter(a=>a.confirmed);
     return {accounts:list,pending:money(confirmed.reduce((n,a)=>n+Math.max(0,a.balance),0)),overdue:money(confirmed.filter(a=>a.status==='Vencida').reduce((n,a)=>n+a.balance,0)),paid:money(confirmed.reduce((n,a)=>n+a.paid,0)),unconfirmed:list.filter(a=>!a.confirmed).length,received:money(list.filter(a=>a.entity==='receptions').reduce((n,a)=>n+a.amount,0))};
@@ -75,6 +108,7 @@
     for(const reception of s.receptions)if(reception.paymentMode){
       if(!['Contado','Crédito'].includes(reception.paymentMode)||!reception.dueDate||reception.dueDate<reception.date)h.fail('Revisa las condiciones y el vencimiento de la recepción.');
     }
+    for(const reception of s.receptions)evaluation(reception,h);
     for(const payment of s.supplierPayments||[]){
       const account=h.find(list,payment.accountId,'Cuenta del abono');
       if(!account.confirmed)h.fail('Confirma la cuenta antes de registrar abonos.');
@@ -85,6 +119,9 @@
   }
   function apply(s,command,now,h){
     const p=command.payload||{};
+    if(command.type==='supplierEvaluation'){
+      const reception=h.find(s.receptions,p.id,'Recepción');Object.assign(reception,evaluation(p,h),{evaluatedAt:now});return true;
+    }
     if(command.type==='supplierCategory'){saveCategory(s,p,command.id,now,h);return true}
     if(command.type==='supplierPayment'){
       const account=h.find(accounts(s),p.accountId,'Cuenta por pagar');
@@ -115,10 +152,16 @@
       Object.assign(h.find(s.suppliers,p.id||command.id,'Proveedor'),supplierTerms(p,old,h),{category});
     }
     if(command.type==='receive'){
-      const r=h.find(s.receptions,command.id,'Recepción');Object.assign(r,receptionTerms(s,r,p,h),{paymentUpdatedAt:now});
+      const r=h.find(s.receptions,command.id,'Recepción');Object.assign(r,receptionTerms(s,r,p,h),evaluation(p,h),{paymentUpdatedAt:now,evaluatedAt:now});
     }
     if(command.type==='editReception'){
       const r=h.find(s.receptions,p.id,'Recepción');if(r.paymentMode==='Contado')r.dueDate=r.date;
+      const old=previous.receptions.find(x=>x.id===r.id),changedSupplier=previous.orders.find(o=>o.id===old?.orderId)?.supplierId!==s.orders.find(o=>o.id===r.orderId)?.supplierId;
+      if(['punctuality','quality','evaluationNote'].some(k=>Object.hasOwn(p,k)))Object.assign(r,evaluation({...r,...p},h),{evaluatedAt:now});
+      else if(changedSupplier)Object.assign(r,evaluation({},h),{evaluatedAt:now});
+    }
+    if(command.type==='editOrder'&&previous.orders.find(o=>o.id===p.id)?.supplierId!==s.orders.find(o=>o.id===p.id)?.supplierId){
+      for(const r of s.receptions.filter(r=>r.orderId===p.id))Object.assign(r,evaluation({},h),{evaluatedAt:now});
     }
   }
   function supplies(s,supplierId){
@@ -129,5 +172,5 @@
     }
     return Object.values(records);
   }
-  globalThis.MisturaPayables={accounts,summary,apply,after,validate,supplies,categories,supplierCategory,categoryNames};
+  globalThis.MisturaPayables={accounts,summary,apply,after,validate,supplies,categories,supplierCategory,categoryNames,priceHistory,performance};
 })();

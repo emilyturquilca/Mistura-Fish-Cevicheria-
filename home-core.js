@@ -6,7 +6,7 @@
     const value=normalize(text).replace(/^(por favor |mistura |oye mistura )/,'').replace(/ por favor$/,'');
     if(/^(leer|lee|escuchar|escucha) (el )?(saludo|resumen)( de hoy)?$/.test(value))return {action:'read'};
     const target=value.replace(/^(abre|abrir|ver|ir a|ir al|mostrar|muestra) (el |la |los |las )?/,'');
-    const views={'inicio':'Inicio','inventario':'Inventario','compras':'Compras','proveedores':'Proveedores','deudas':'Cuentas por pagar','cuentas por pagar':'Cuentas por pagar','reservaciones':'Reservaciones','reservaciones de hoy':'Reservaciones','recepciones':'Recepción','recepciones de hoy':'Recepción','mermas':'Mermas','recetas':'Escandallos','escandallos':'Escandallos','rentabilidad':'Rentabilidad','ventas':'Ventas','ventas por hora':'Ventas por hora'};
+    const views={'inicio':'Inicio','inventario':'Inventario','compras':'Compras','proveedores':'Proveedores','deudas':'Cuentas por pagar','cuentas por pagar':'Cuentas por pagar','reservaciones':'Reservaciones','reservaciones de hoy':'Reservaciones','recepciones':'Reservaciones','recepciones de hoy':'Reservaciones','recepciones de clientes':'Reservaciones','recepciones de productos':'Recepción','mermas':'Mermas','recetas':'Escandallos','escandallos':'Escandallos','rentabilidad':'Rentabilidad','ventas':'Ventas','ventas por hora':'Ventas por hora'};
     return views[target]?{action:'navigate',view:views[target]}:null;
   }
   function daily(s,now=new Date()){

@@ -20,7 +20,8 @@ test('Home uses the Lima business day for reservations and the recorded goods re
 test('Voice only accepts explicit navigation and reading, with accent and punctuation normalization',()=>{
   assert.deepEqual(H.command('Por favor, abrir el inventario.'),{action:'navigate',view:'Inventario'});
   assert.deepEqual(H.command('Ver reservaciones de hoy'),{action:'navigate',view:'Reservaciones'});
-  assert.deepEqual(H.command('ver recepciones de hoy'),{action:'navigate',view:'Recepción'});
+  assert.deepEqual(H.command('ver recepciones de hoy'),{action:'navigate',view:'Reservaciones'});
+  assert.deepEqual(H.command('ver recepciones de productos'),{action:'navigate',view:'Recepción'});
   assert.deepEqual(H.command('ir a las recetas'),{action:'navigate',view:'Escandallos'});
   assert.deepEqual(H.command('Lee el resumen de hoy'),{action:'read'});
   for(const text of ['borrar inventario','pagar deudas','registrar merma','comprar pescado','abrir inventario y borrar todo',''])assert.equal(H.command(text),null);
