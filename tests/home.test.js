@@ -17,13 +17,16 @@ test('Home uses the Lima business day for reservations and the recorded goods re
   assert.equal(d.receptions.length,1);assert.equal(d.receptions[0].supplier,'Proveedor de prueba');assert.equal(JSON.stringify(s),before);
   const next=H.daily(s,new Date('2026-10-17T05:00:00Z'));assert.equal(next.day,'2026-10-17');assert.equal(next.pending[0].id,'b');assert.equal(next.receptions[0].id,'tomorrow');
 });
-test('Voice only accepts explicit navigation and reading, with accent and punctuation normalization',()=>{
+test('Voice only accepts navigation, with accent, punctuation and natural prefix normalization',()=>{
   assert.deepEqual(H.command('Por favor, abrir el inventario.'),{action:'navigate',view:'Inventario'});
   assert.deepEqual(H.command('Ver reservaciones de hoy'),{action:'navigate',view:'Reservaciones'});
   assert.deepEqual(H.command('ver recepciones de hoy'),{action:'navigate',view:'Reservaciones'});
   assert.deepEqual(H.command('ver recepciones de productos'),{action:'navigate',view:'Recepción'});
   assert.deepEqual(H.command('ir a las recetas'),{action:'navigate',view:'Escandallos'});
-  assert.deepEqual(H.command('Lee el resumen de hoy'),{action:'read'});
+  assert.deepEqual(H.command('Lee el resumen de hoy'),{action:'navigate',view:'Inicio'});
+  assert.deepEqual(H.command('Muéstrame las compras'),{action:'navigate',view:'Compras'});
+  assert.deepEqual(H.command('Quiero ver proveedores'),{action:'navigate',view:'Proveedores'});
+  assert.deepEqual(H.command('Hola Mistura, por favor abre el módulo de inventario'),{action:'navigate',view:'Inventario'});
   for(const text of ['borrar inventario','pagar deudas','registrar merma','comprar pescado','abrir inventario y borrar todo',''])assert.equal(H.command(text),null);
 });
 test('Fishery snapshot expires and never treats an expired seasonal calendar as a current authorization',()=>{

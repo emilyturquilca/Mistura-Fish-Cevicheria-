@@ -123,10 +123,10 @@ test('exports keep numbers numeric, include all receipts and quote CSV safely', 
 
 function app() {
   const elements = new Map();
-  const element = () => ({ innerHTML: '', querySelectorAll: () => [], appendChild() {}, remove() {}, click() {}, setAttribute() {} });
+  const element = () => ({ innerHTML: '', dataset:{}, querySelectorAll: () => [], appendChild() {}, remove() {}, click() {}, setAttribute() {} });
   const storage = new Map();
   const context = vm.createContext({
-    console, Date, Intl, URL, Blob, structuredClone, setTimeout() {},setInterval() {},
+    console, Date, Intl, URL, Blob, structuredClone, setTimeout() {},clearTimeout() {},setInterval() {},
     localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: k => storage.delete(k) },
     sessionStorage: { getItem: () => '', removeItem() {} },
     document: { querySelectorAll: () => [], querySelector: () => null, getElementById: id => { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); }, createElement: element, body: element() },
@@ -177,9 +177,7 @@ test('Home voice fallback navigates without writes and does not autoplay or star
   assert.match(vm.runInContext('V.Inicio()',context),/Temporada de pesca · Ilo/);
   assert.equal(vm.runInContext('homeListening',context),false);
   vm.runInContext('homeStartVoice()',context);
-  assert.match(vm.runInContext('homeVoiceMessage',context),/no está disponible/);
-  vm.runInContext('homeRead()',context);
-  assert.match(vm.runInContext('homeVoiceMessage',context),/no puede leer/);
+  assert.match(vm.runInContext('homeVoiceMessage',context),/no ofrece reconocimiento/);
   assert.equal(vm.runInContext("homeRunCommand('pagar deudas')",context),false);
   vm.runInContext("homeRunCommand('abrir inventario')",context);
   assert.equal(vm.runInContext('view',context),'Inventario');
@@ -198,15 +196,43 @@ test('Voice recognition stops on navigation and late browser events cannot navig
   assert.equal(vm.runInContext('view',context),'Proveedores');
 });
 
-test('Stopping a spoken greeting ignores the browser cancellation error and keeps the stop status',()=>{
+test('Home has no spoken greeting and never invokes speech synthesis',()=>{
   const context=app();
-  vm.runInContext(`window.SpeechSynthesisUtterance=class{constructor(text){this.text=text}};window.speechSynthesis={getVoices:()=>[{lang:'es-PE'}],speak(u){globalThis.spoken=u},cancel(){if(globalThis.spoken)spoken.onerror()}};homeRead()`,context);
-  assert.equal(vm.runInContext('homeSpeaking',context),true);
-  assert.equal(vm.runInContext('spoken.lang',context),'es-PE');
-  assert.match(vm.runInContext('spoken.text',context),/Bienvenido a Mistura Fish/);
-  vm.runInContext('homeStopVoice()',context);
-  assert.equal(vm.runInContext('homeSpeaking',context),false);
-  assert.equal(vm.runInContext('homeVoiceMessage',context),'Voz detenida.');
+  vm.runInContext(`window.SpeechSynthesisUtterance=class{constructor(){throw Error('Audio removed')}};window.speechSynthesis={speak(){throw Error('Audio removed')},cancel(){throw Error('Audio removed')}};homeRunCommand('leer resumen')`,context);
+  assert.equal(vm.runInContext('view',context),'Inicio');
+  const markup=vm.runInContext('V.Inicio()',context);assert.ok(!markup.includes('Escuchar saludo'));assert.ok(!markup.includes('Detener lectura'));
+});
+
+test('Voice click immediately shows starting state and allows cancellation before Chrome responds',()=>{
+  const context=app();
+  vm.runInContext(`window.SpeechRecognition=class{constructor(){globalThis.recognition=this}start(){}abort(){this.aborted=true;this.onend?.()}};homeStartVoice()`,context);
+  assert.equal(vm.runInContext('homeListening',context),true);assert.equal(vm.runInContext('homeVoiceStarting',context),true);assert.match(vm.runInContext('homeVoiceMessage',context),/Iniciando micrófono/);
+  vm.runInContext('homeStartVoice()',context);
+  assert.equal(vm.runInContext('homeListening',context),false);assert.equal(vm.runInContext('recognition.aborted',context),true);
+});
+
+test('Voice errors clean up immediately even if Chrome never emits an end event',()=>{
+  const context=app();
+  vm.runInContext(`window.SpeechRecognition=class{constructor(){globalThis.recognition=this}start(){this.onstart()}abort(){this.aborted=true}};homeStartVoice();recognition.onerror({error:'not-allowed'})`,context);
+  assert.equal(vm.runInContext('homeListening',context),false);assert.equal(vm.runInContext('homeVoiceStarting',context),false);assert.match(vm.runInContext('homeVoiceMessage',context),/Chrome no permite/);
+  vm.runInContext(`homeStartVoice();recognition.onerror({error:'network'})`,context);
+  assert.equal(vm.runInContext('homeListening',context),false);assert.match(vm.runInContext('homeVoiceMessage',context),/no pudo conectarse/);
+});
+
+test('An unavailable constructor and a start exception never escape the button handler',()=>{
+  const context=app();
+  vm.runInContext(`window.SpeechRecognition=class{constructor(){throw Object.assign(new Error(),{name:'NotAllowedError'})}};homeStartVoice()`,context);
+  assert.equal(vm.runInContext('homeListening',context),false);assert.match(vm.runInContext('homeVoiceMessage',context),/Chrome no permite/);
+  vm.runInContext(`window.SpeechRecognition=class{start(){throw Error('unavailable')}abort(){}};homeStartVoice()`,context);
+  assert.equal(vm.runInContext('homeListening',context),false);assert.match(vm.runInContext('homeVoiceMessage',context),/No se pudo iniciar/);
+});
+
+test('Voice startup times out instead of leaving the user waiting, and late events are ignored',()=>{
+  const context=app();
+  vm.runInContext(`globalThis.voiceTimers=new Map();let tid=0;setTimeout=(fn)=>{voiceTimers.set(++tid,fn);return tid};clearTimeout=id=>voiceTimers.delete(id);window.SpeechRecognition=class{constructor(){globalThis.recognition=this}start(){}abort(){this.aborted=true}};homeStartVoice();[...voiceTimers.values()][0]()`,context);
+  assert.equal(vm.runInContext('homeListening',context),false);assert.equal(vm.runInContext('voiceTimers.size',context),0);assert.match(vm.runInContext('homeVoiceMessage',context),/Chrome no inició/);
+  vm.runInContext("recognition.onstart();recognition.onresult({results:[[{transcript:'abrir compras'}]]})",context);
+  assert.equal(vm.runInContext('view',context),'Inicio');assert.equal(vm.runInContext('homeListening',context),false);
 });
 
 test('Hourly Excel preserves the selected day and numeric amounts in all 24 hours', () => {
@@ -238,7 +264,6 @@ test('Supplier profiles render linked purchases, goods and accounts with escaped
   vm.runInContext("ingredientHistory='ingredient'",context);
   assert.match(vm.runInContext("V['Precios de insumos']()",context),/GUIA FICTICIA/);
   assert.ok(!vm.runInContext('V.Inicio()',context).includes('Mercadería recibida hoy'));
-  assert.ok(!vm.runInContext('homeGreeting()',context).includes('mercadería'));
   assert.match(vm.runInContext("V['Cuentas por pagar']()",context),/Deuda pendiente/);
 });
 
