@@ -175,6 +175,9 @@ test('all UI views render, daily navigation updates the chosen total, and labels
 test('Home voice fallback navigates without writes and does not autoplay or start a microphone',()=>{
   const context=app();
   assert.match(vm.runInContext('V.Inicio()',context),/Temporada de pesca · Ilo/);
+  const homeMarkup=vm.runInContext('V.Inicio()',context);
+  assert.ok(homeMarkup.indexOf('id="home-command"')<homeMarkup.indexOf('<details'));
+  assert.match(homeMarkup,/Windows \+ H/);
   assert.equal(vm.runInContext('homeListening',context),false);
   vm.runInContext('homeStartVoice()',context);
   assert.match(vm.runInContext('homeVoiceMessage',context),/no ofrece reconocimiento/);
@@ -214,15 +217,17 @@ test('Voice click immediately shows starting state and allows cancellation befor
 test('Voice errors clean up immediately even if Chrome never emits an end event',()=>{
   const context=app();
   vm.runInContext(`window.SpeechRecognition=class{constructor(){globalThis.recognition=this}start(){this.onstart()}abort(){this.aborted=true}};homeStartVoice();recognition.onerror({error:'not-allowed'})`,context);
-  assert.equal(vm.runInContext('homeListening',context),false);assert.equal(vm.runInContext('homeVoiceStarting',context),false);assert.match(vm.runInContext('homeVoiceMessage',context),/Chrome no permite/);
+  assert.equal(vm.runInContext('homeListening',context),false);assert.equal(vm.runInContext('homeVoiceStarting',context),false);assert.match(vm.runInContext('homeVoiceMessage',context),/El navegador no permite/);
   vm.runInContext(`homeStartVoice();recognition.onerror({error:'network'})`,context);
   assert.equal(vm.runInContext('homeListening',context),false);assert.match(vm.runInContext('homeVoiceMessage',context),/no pudo conectarse/);
+  assert.match(vm.runInContext('homeVoiceMessage',context),/En Brave este servicio puede no estar disponible/);
+  assert.match(vm.runInContext('homeVoiceMessage',context),/Windows \+ H/);
 });
 
 test('An unavailable constructor and a start exception never escape the button handler',()=>{
   const context=app();
   vm.runInContext(`window.SpeechRecognition=class{constructor(){throw Object.assign(new Error(),{name:'NotAllowedError'})}};homeStartVoice()`,context);
-  assert.equal(vm.runInContext('homeListening',context),false);assert.match(vm.runInContext('homeVoiceMessage',context),/Chrome no permite/);
+  assert.equal(vm.runInContext('homeListening',context),false);assert.match(vm.runInContext('homeVoiceMessage',context),/El navegador no permite/);
   vm.runInContext(`window.SpeechRecognition=class{start(){throw Error('unavailable')}abort(){}};homeStartVoice()`,context);
   assert.equal(vm.runInContext('homeListening',context),false);assert.match(vm.runInContext('homeVoiceMessage',context),/No se pudo iniciar/);
 });
@@ -230,7 +235,7 @@ test('An unavailable constructor and a start exception never escape the button h
 test('Voice startup times out instead of leaving the user waiting, and late events are ignored',()=>{
   const context=app();
   vm.runInContext(`globalThis.voiceTimers=new Map();let tid=0;setTimeout=(fn)=>{voiceTimers.set(++tid,fn);return tid};clearTimeout=id=>voiceTimers.delete(id);window.SpeechRecognition=class{constructor(){globalThis.recognition=this}start(){}abort(){this.aborted=true}};homeStartVoice();[...voiceTimers.values()][0]()`,context);
-  assert.equal(vm.runInContext('homeListening',context),false);assert.equal(vm.runInContext('voiceTimers.size',context),0);assert.match(vm.runInContext('homeVoiceMessage',context),/Chrome no inició/);
+  assert.equal(vm.runInContext('homeListening',context),false);assert.equal(vm.runInContext('voiceTimers.size',context),0);assert.match(vm.runInContext('homeVoiceMessage',context),/El navegador no inició/);
   vm.runInContext("recognition.onstart();recognition.onresult({results:[[{transcript:'abrir compras'}]]})",context);
   assert.equal(vm.runInContext('view',context),'Inicio');assert.equal(vm.runInContext('homeListening',context),false);
 });
