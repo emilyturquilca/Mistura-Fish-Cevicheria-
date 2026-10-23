@@ -6,6 +6,7 @@ import '../operations-core.js';
 import '../operations-edit-core.js';
 import '../restaurant-core.js';
 import '../payables-core.js';
+import '../service-core.js';
 
 const root = new URL('../', import.meta.url);
 const today = globalThis.MisturaCore.dateKey();
@@ -71,7 +72,7 @@ const server = createServer(async (request, response) => {
     return;
   }
   const files = { '/': 'index.html', '/dark': 'index.html', '/index.html': 'index.html', '/sales-core.js': 'sales-core.js', '/operations-core.js': 'operations-core.js', '/operations-edit-core.js':'operations-edit-core.js','/restaurant-core.js':'restaurant-core.js','/restaurant-ui.js':'restaurant-ui.js', '/payables-core.js':'payables-core.js', '/payables-ui.js':'payables-ui.js', '/operations-edit-ui.js':'operations-edit-ui.js', '/operations-ui.js': 'operations-ui.js', '/assets/xlsx.full.min.js': 'assets/xlsx.full.min.js' };
-  Object.assign(files,{'/supplier-performance-ui.js':'supplier-performance-ui.js','/supplier-performance.css':'supplier-performance.css','/home-core.js':'home-core.js','/home-ui.js':'home-ui.js','/home.css':'home.css','/assets/mistura-logo.png':'assets/mistura-logo.png'});
+  Object.assign(files,{'/supplier-performance-ui.js':'supplier-performance-ui.js','/supplier-performance.css':'supplier-performance.css','/service-core.js':'service-core.js','/service-ui.js':'service-ui.js','/service.css':'service.css','/home-core.js':'home-core.js','/home-ui.js':'home-ui.js','/home.css':'home.css','/assets/mistura-logo.png':'assets/mistura-logo.png'});
   const file = files[url.pathname];
   if (!file) { response.writeHead(404); response.end(); return; }
   try {

@@ -1,7 +1,8 @@
 // Editing/deletion rules shared by the server and the deletion preview.
 (() => {
-  const collections = ['suppliers', 'ingredients', 'orders', 'receptions', 'movements', 'recipes','reservations','preparedWastes','supplierDebts','supplierPayments','supplierCategories'];
+  const collections = ['suppliers', 'ingredients', 'orders', 'receptions', 'movements', 'recipes','reservations','preparedWastes','supplierDebts','supplierPayments','supplierCategories','productionPlans','kitchenTickets','staff','shifts','customers','customerVisits','loyaltyRewards'];
   function prepare(s) {
+    for(const key of ['productionPlans','kitchenTickets','staff','shifts','customers','customerVisits','loyaltyRewards'])s[key] ||= [];
     s.reservations ||= [];s.preparedWastes ||= [];s.supplierDebts ||= [];s.supplierPayments ||= [];s.supplierCategories ||= [];
     const balances = {};
     for (const m of s.movements) {
@@ -71,10 +72,15 @@
     for (const ingredient of s.ingredients) ingredient.cost = costs[ingredient.id] ?? null;
     for (const recipe of s.recipes) for (const line of recipe.lines) find(s.ingredients, line.ingredientId, 'Insumo de la receta');
     globalThis.MisturaPayables?.validate(s,{fail,find});
+    globalThis.MisturaService?.validate(s,{fail,find});
   }
   function deletion(s, entity, targetId, { fail, find }) {
     if (!collections.includes(entity)) fail('Registro no eliminable.');
     const target = find(s[entity], targetId, 'Registro'), bundle = Object.fromEntries(collections.map(c => [c, []]));
+    if(entity==='staff'&&(s.shifts.some(r=>r.staffId===targetId)||[...s.productionPlans,...s.kitchenTickets].some(r=>r.staffId===targetId)))fail('Esta persona tiene turnos o tareas. Reasígnalos o elimínalos antes de eliminar su ficha; también puedes marcarla como inactiva.');
+    if(entity==='reservations'&&s.kitchenTickets.some(r=>r.reservationId===targetId))fail('Esta reservación tiene una comanda. Elimina primero la comanda o conserva la reservación como cancelada.');
+    if(entity==='customers'&&[...s.customerVisits,...s.loyaltyRewards,...s.kitchenTickets].some(r=>r.customerId===targetId))fail('Este cliente tiene historial. Elimina o reasigna sus registros antes de eliminar la ficha.');
+    if(entity==='customerVisits'&&globalThis.MisturaService){const customer=find(s.customers,target.customerId,'Cliente'),balance=globalThis.MisturaService.loyalty(s,customer);if(balance.earned-1<balance.used)fail('Esta visita respalda un beneficio entregado. Corrige primero ese beneficio.');}
     if(entity==='supplierCategories'&&s.suppliers.some(p=>p.category===target.name))fail('Esta categoría está asignada a proveedores. Cámbialos a otra categoría antes de eliminarla.');
     if (entity === 'suppliers' && s.orders.some(o => o.supplierId === targetId)) fail('Este proveedor tiene compras. Reasigna o elimina esas compras antes de eliminar el proveedor.');
     if (entity === 'suppliers' && s.ingredients.some(i => i.supplierId === targetId)) fail('Este proveedor está asignado a insumos. Cambia su proveedor desde Inventario antes de eliminarlo.');
