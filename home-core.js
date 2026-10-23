@@ -7,6 +7,7 @@
     const target=value.replace(/^(?:(?:quiero|necesito) )?(?:abre|abrir|ver|ir a|ir al|mostrar|muestra|muestrame|llevame a|llevame al|entrar a|ingresar a|leer|lee|escuchar|escucha) (?:el |la |los |las )?/,'').replace(/^(?:modulo|pantalla|seccion) de /,'');
     const views={'inicio':'Inicio','inventario':'Inventario','compras':'Compras','proveedores':'Proveedores','deudas':'Cuentas por pagar','cuentas por pagar':'Cuentas por pagar','reservaciones':'Reservaciones','reservaciones de hoy':'Reservaciones','recepciones':'Reservaciones','recepciones de hoy':'Reservaciones','recepciones de clientes':'Reservaciones','recepciones de productos':'Recepción','mermas':'Mermas','recetas':'Escandallos','escandallos':'Escandallos','rentabilidad':'Rentabilidad','ventas':'Ventas','ventas por hora':'Ventas por hora'};
     Object.assign(views,{'resumen':'Inicio','resumen de hoy':'Inicio','ventas de hoy':'Ventas','proveedor':'Proveedores','receta':'Escandallos'});
+    Object.assign(views,{'produccion':'Producción','cocina':'Cocina / comandas','comandas':'Cocina / comandas','personal':'Personal','clientes':'Clientes / fidelización','fidelizacion':'Clientes / fidelización','pronostico':'Pronóstico'});
     return views[target]?{action:'navigate',view:views[target]}:null;
   }
   function daily(s,now=new Date()){

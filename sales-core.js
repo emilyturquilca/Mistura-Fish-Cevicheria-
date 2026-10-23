@@ -55,6 +55,7 @@
       source: 'api', type: receipt.receipt_type, updatedAt: receipt.updated_at,
       store: receipt.store_id || '', refundFor: receipt.refund_for || '',
       cli: customers[receipt.customer_id] || 'Consumidor final',
+      customerId: receipt.customer_id || '',
       pay: (receipt.payments || []).map(p => p.name).join(' + ') || 'Sin dato',
       total: signed(receipt.total_money), net: signed(net),
       gross: signed(net + number(receipt.total_discount)),
