@@ -2,7 +2,7 @@
 
 ## Administración / Dueña
 
-El panel principal requiere la contraseña de administración del servidor. El menú muestra Dashboard, Ventas, Reportes, Proveedores, Cuentas por pagar, Compras y stock, Pedidos web y Configuración. La información completa y las conexiones con proveedores y pasarelas se mantienen en endpoints de administración.
+El panel principal requiere la contraseña de administración del servidor. Inicio es la pantalla principal, con el logo, las reservaciones de hoy y la referencia de pesca de Ilo. El menú muestra Inicio, Dashboard, Ventas, Reportes, Proveedores, Cuentas por pagar, Compras y stock, Pedidos web y Configuración. La información completa y las conexiones con proveedores y pasarelas se mantienen en endpoints de administración.
 
 ## Operativo / Caja y Cocina
 
