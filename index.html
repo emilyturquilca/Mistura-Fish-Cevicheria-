@@ -17,11 +17,11 @@
 <script src="restaurant-ui.js"></script>
 <script src="payables-ui.js"></script>
 <script src="supplier-performance-ui.js"></script>
-<script src="home-ui.js?v=20261023-servicio"></script>
+<script src="home-ui.js?v=20261028-inicio"></script>
 <script src="service-ui.js?v=20261023-web"></script>
 <script src="assets/qrcode.js"></script>
 <script src="online-admin.js?v=20261023-web"></script>
-<script src="management-ui.js?v=20261027"></script>
+<script src="management-ui.js?v=20261028-inicio"></script>
 <style>
 :root{--bg:#f3f8fa;--card:#fff;--ink:#0d2b3e;--mut:#5b7686;--line:#dbe8ee;--side:#0b2a40;--sea:#0e7c9b;--tq:#19b5b0;--warm:#f08a4b;--sand:#e8f4f6;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0a1b28;--card:#10293a;--ink:#e6f2f6;--mut:#8fb0bf;--line:#1d3d52;--sand:#14344a}}
@@ -152,7 +152,7 @@ function sel(k){const interval=range(k);return VENTAS.filter(v=>Core.inRange(v,i
 function group(arr,keyFn,valFn){const m={};arr.forEach(x=>{const k=keyFn(x);m[k]=(m[k]||0)+valFn(x)});return m}
 function lines(vs){return vs.flatMap(v=>v.items.map(i=>({...i,pr:PROD[i.p],v})))}
 const P={k:'hoy',day:Core.dateKey(),metric:'net',from:Core.shiftDay(Core.dateKey(),-7),to:Core.dateKey()};
-let view='Dashboard',charts=[],renderRevision=0,q='',fp='',openId=null,step=0,lastImport=null;
+let view='Inicio',charts=[],renderRevision=0,q='',fp='',openId=null,step=0,lastImport=null;
 const MENU=['Inicio','Inventario','Compras','Proveedores','Cuentas por pagar','Reservaciones','Mermas','Escandallos','Rentabilidad','Sincronizar Loyverse','Producción','Cocina / comandas','Pedidos web','Personal','Clientes / fidelización','Pronóstico','Dashboard','Ventas','Ventas por hora','Productos','Reportes','Configuración'];
 function nav(){const n=document.getElementById('nav');n.querySelectorAll('button,.nav-label').forEach(b=>b.remove());
  const label=document.createElement('div');label.className='nav-label';label.textContent=managementWorkspace==='advanced'?'MÓDULOS AVANZADOS':'ADMINISTRACIÓN / DUEÑA';n.appendChild(label);

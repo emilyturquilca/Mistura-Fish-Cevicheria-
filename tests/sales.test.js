@@ -121,7 +121,7 @@ test('exports keep numbers numeric, include all receipts and quote CSV safely', 
   assert.ok(csv.includes('"-12.5"'));
 });
 
-function app() {
+function app({ profiles=false }={}) {
   const elements = new Map();
   const element = () => ({ innerHTML: '', dataset:{}, querySelectorAll: () => [], appendChild() {}, remove() {}, click() {}, setAttribute() {} });
   const storage = new Map();
@@ -155,7 +155,7 @@ function app() {
   const source = readFileSync(new URL('../index.html', import.meta.url), 'utf8').match(/<script>\s*([\s\S]*?)<\/script>/)[1];
   vm.runInContext(source, context);
   vm.runInContext('OPS.state=OpsCore.initial();OPS.configured=true;', context);
-  vm.runInContext("view='Inicio';managementGuard=()=>{}",context);
+  if(!profiles)vm.runInContext("view='Inicio';managementGuard=()=>{}",context);
   return context;
 }
 
@@ -189,7 +189,7 @@ test('Home voice fallback navigates without writes and does not autoplay or star
   assert.match(vm.runInContext('homeVoiceMessage',context),/no ofrece reconocimiento/);
   assert.equal(vm.runInContext("homeRunCommand('pagar deudas')",context),false);
   vm.runInContext("homeRunCommand('abrir inventario')",context);
-  assert.equal(vm.runInContext('view',context),'Inventario');
+  assert.equal(vm.runInContext('view',context),'Compras');
   assert.equal(vm.runInContext('OPS.state.movements.length',context),0);
 });
 
@@ -386,4 +386,21 @@ test('rapid renders and view changes discard stale chart callbacks before they r
   assert.equal(context.chartInstances.length, 1);
   assert.equal(context.chartInstances[0].config.type, 'bar');
   assert.equal(context.chartInstances[0].config.options.indexAxis, 'y');
+});
+
+
+test('Administration opens Inicio, retains Dashboard and hides advanced home shortcuts',()=>{
+  const context=app({profiles:true});
+  assert.equal(vm.runInContext('view',context),'Inicio');
+  vm.runInContext('render()',context);
+  assert.equal(vm.runInContext('view',context),'Inicio');
+  assert.equal(vm.runInContext("managementMenu().includes('Dashboard')",context),true);
+  const markup=vm.runInContext('V.Inicio()',context);
+  assert.match(markup,/Reservaciones de clientes de hoy/);
+  assert.match(markup,/Temporada de pesca · Ilo/);
+  assert.doesNotMatch(markup,/homeNavigate\('(?:Mermas|Escandallos|Rentabilidad|Pronóstico)'\)/);
+  vm.runInContext("view='Dashboard';render()",context);
+  assert.equal(vm.runInContext('view',context),'Dashboard');
+  vm.runInContext("view='Rentabilidad';render()",context);
+  assert.equal(vm.runInContext('view',context),'Inicio');
 });
