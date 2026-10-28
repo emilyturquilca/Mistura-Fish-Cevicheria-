@@ -43,7 +43,7 @@ export async function POST(request) {
       const state = structuredClone(current.state), sales = state.sales;
       for (const item of items) {
         const variant = (item.variants || [])[0] || {};
-        sales.prods[item.id] = { n: item.item_name, c: cn[item.category_id] || 'Sin categoría', p: variant.default_price ?? 0, k: variant.cost > 0 ? variant.cost : null };
+        sales.prods[item.id] = { ...sales.prods[item.id],n: item.item_name, c: cn[item.category_id] || 'Sin categoría', p: variant.default_price ?? 0, k: variant.cost > 0 ? variant.cost : null,variantId:item.variants?.length===1?(variant.variant_id||variant.id):'',taxIds:(item.tax_ids||item.taxes||[]).map(t=>typeof t==='string'?t:t.id) };
       }
       const counts = globalThis.MisturaCore.mergeReceipts(sales, receipts, cm);
       sales.cancelledIds ||= {};

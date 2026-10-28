@@ -5,6 +5,7 @@ import '../operations-edit-core.js';
 import '../restaurant-core.js';
 import '../payables-core.js';
 import '../service-core.js';
+import '../management-core.js';
 
 const O = globalThis.MisturaOperations;
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });

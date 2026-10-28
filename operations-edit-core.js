@@ -77,6 +77,7 @@
   function deletion(s, entity, targetId, { fail, find }) {
     if (!collections.includes(entity)) fail('Registro no eliminable.');
     const target = find(s[entity], targetId, 'Registro'), bundle = Object.fromEntries(collections.map(c => [c, []]));
+    if(entity==='kitchenTickets'&&target.onlineOrderId)fail('Conserva el historial del pedido web. Puedes rechazarlo desde cocina o archivarlo desde Pedidos web.');
     if(entity==='staff'&&(s.shifts.some(r=>r.staffId===targetId)||[...s.productionPlans,...s.kitchenTickets].some(r=>r.staffId===targetId)))fail('Esta persona tiene turnos o tareas. Reasígnalos o elimínalos antes de eliminar su ficha; también puedes marcarla como inactiva.');
     if(entity==='reservations'&&s.kitchenTickets.some(r=>r.reservationId===targetId))fail('Esta reservación tiene una comanda. Elimina primero la comanda o conserva la reservación como cancelada.');
     if(entity==='customers'&&[...s.customerVisits,...s.loyaltyRewards,...s.kitchenTickets].some(r=>r.customerId===targetId))fail('Este cliente tiene historial. Elimina o reasigna sus registros antes de eliminar la ficha.');

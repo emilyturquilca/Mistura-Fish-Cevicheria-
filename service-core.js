@@ -22,7 +22,7 @@
     else s[entity].push({id:command.id,createdAt:now,updatedAt:now,...record});
   }
   function demand(s,date){
-    const tickets=(s.kitchenTickets||[]).filter(t=>t.date===date&&t.status!=='Cancelada');
+    const tickets=(s.kitchenTickets||[]).filter(t=>t.date===date&&!['Cancelada','Por aceptar'].includes(t.status));
     const linked=new Set(tickets.map(t=>t.reservationId).filter(Boolean));
     const reservations=(s.reservations||[]).filter(r=>r.status==='Pendiente'&&C().dateKey(r.plannedAt)===date&&!linked.has(r.id));
     const dishes={};for(const row of [...tickets,...reservations])for(const l of row.lines)dishes[l.productKey]=(dishes[l.productKey]||0)+l.quantity;
@@ -69,10 +69,11 @@
       if(s.productionPlans.some(r=>r.id!==p.id&&r.date===date&&r.status!=='Cancelada')&&status!=='Cancelada')h.fail('Ya existe un plan activo para ese día. Edítalo para agregar platos.');
       if(p.staffId)h.find(s.staff,p.staffId,'Responsable');
       const selected=lines(s,p.lines,h);
-      if(status!=='Planificada'&&status!=='Cancelada'&&requirements(s,Object.fromEntries(selected.map(l=>[l.productKey,l.quantity]))).missing.length)h.fail('Completa las recetas antes de iniciar la preparación.');
+      if(s.settings?.stockMode==='recipes'&&status!=='Planificada'&&status!=='Cancelada'&&requirements(s,Object.fromEntries(selected.map(l=>[l.productKey,l.quantity]))).missing.length)h.fail('Completa las recetas antes de iniciar la preparación.');
       save(s,'productionPlans',p,{date,status,staffId:p.staffId||'',note:h.text(p.note,'Notas',true),lines:selected},command,now,h);return true;
     }
     if(command.type==='kitchenTicket'){
+      if(p.id&&s.kitchenTickets.find(t=>t.id===p.id)?.onlineOrderId)h.fail('Este pedido viene de la web. Corrige su contacto u observaciones desde Pedidos web; conserva los platos y el importe del pedido.');
       const reservation=p.reservationId?h.find(s.reservations,p.reservationId,'Reservación'):null;
       if(reservation?.status==='Cancelada')h.fail('La reservación está cancelada.');
       if(reservation&&s.kitchenTickets.some(t=>t.id!==p.id&&t.reservationId===reservation.id&&t.status!=='Cancelada'))h.fail('Esa reservación ya tiene una comanda.');
@@ -85,7 +86,9 @@
       save(s,'kitchenTickets',p,{number:previous?.number||Math.max(0,...s.kitchenTickets.map(t=>t.number||0),...(s.trash||[]).flatMap(t=>(t.bundle.kitchenTickets||[]).map(r=>r.number||0)))+1,date,status,reservationId:reservation?.id||'',customerId:p.customerId||'',staffId:p.staffId||'',table:h.text(p.table||reservation?.name,'Mesa / pedido'),note:h.text(p.note??reservation?.note,'Notas',true),lines:selected,statusAt:previous?.status===status?previous.statusAt:now},command,now,h);return true;
     }
     if(command.type==='kitchenStatus'){
-      const ticket=h.find(s.kitchenTickets,p.id,'Comanda'),next={Pendiente:'En preparación','En preparación':'Lista',Lista:'Entregada'}[ticket.status];
+      const ticket=h.find(s.kitchenTickets,p.id,'Comanda'),next={'Por aceptar':'Pendiente',Pendiente:'En preparación','En preparación':'Lista',Lista:'Entregada'}[ticket.status];
+      const online=s.onlineOrders?.find(o=>o.id===ticket.onlineOrderId);
+      if(online&&(online.archived||(online.method!=='Efectivo'&&online.payment.status!=='paid')))h.fail('El pedido web requiere confirmar el pago o revisar su archivo antes de continuar.');
       if(p.status!==next)h.fail('Actualiza la comanda y revisa su estado.');
       Object.assign(ticket,{status:next,statusAt:now,updatedAt:now});return true;
     }

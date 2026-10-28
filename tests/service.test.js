@@ -5,6 +5,7 @@ const O=globalThis.MisturaOperations,S=globalThis.MisturaService,C=globalThis.Mi
 const now='2026-10-23T17:00:00Z';
 function setup(){
   let s=O.initial(),n=0;
+  s.settings={stockMode:'recipes'};
   const apply=(type,payload,id='command-'+(++n))=>{s=O.apply(s,{id,type,payload},now).state;return s};
   apply('ingredient',{name:'Insumo de prueba',unit:'kg',stock:3,unitCost:20},'ingredient');
   s.sales.prods.dish={n:'Plato de prueba',p:30};s.sales.prods.other={n:'Otro plato de prueba',p:30};

@@ -138,6 +138,7 @@ function app() {
   vm.runInContext(readFileSync(new URL('../restaurant-core.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../payables-core.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../service-core.js', import.meta.url), 'utf8'), context);
+  vm.runInContext(readFileSync(new URL('../management-core.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../home-core.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../operations-ui.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../operations-edit-ui.js', import.meta.url), 'utf8'), context);
@@ -146,12 +147,15 @@ function app() {
   vm.runInContext(readFileSync(new URL('../supplier-performance-ui.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../home-ui.js', import.meta.url), 'utf8'), context);
   vm.runInContext(readFileSync(new URL('../service-ui.js', import.meta.url), 'utf8'), context);
+  vm.runInContext(readFileSync(new URL('../online-admin.js', import.meta.url), 'utf8'), context);
+  vm.runInContext(readFileSync(new URL('../management-ui.js', import.meta.url), 'utf8'), context);
   if (existsSync(new URL('../assets/xlsx.full.min.js', import.meta.url))) {
     vm.runInContext(readFileSync(new URL('../assets/xlsx.full.min.js', import.meta.url), 'utf8'), context);
   }
   const source = readFileSync(new URL('../index.html', import.meta.url), 'utf8').match(/<script>\s*([\s\S]*?)<\/script>/)[1];
   vm.runInContext(source, context);
   vm.runInContext('OPS.state=OpsCore.initial();OPS.configured=true;', context);
+  vm.runInContext("view='Inicio';managementGuard=()=>{}",context);
   return context;
 }
 
