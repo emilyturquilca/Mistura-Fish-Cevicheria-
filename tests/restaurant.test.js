@@ -6,6 +6,7 @@ const O=globalThis.MisturaOperations,R=globalThis.MisturaRestaurant,C=globalThis
 const at=minute=>'2026-10-15T15:'+String(minute).padStart(2,'0')+':00Z';
 function setup(stock=10){
   let state=O.initial();
+  state.settings={stockMode:'recipes'};
   const apply=(id,type,payload,minute=0)=>{state=O.apply(state,{id,type,payload},at(minute)).state;return state};
   apply('fish','ingredient',{name:'Pescado de prueba',unit:'kg',category:'Pescados',newSupplierName:'Proveedor de prueba',stock,unitCost:20});
   state.sales.prods.dish={n:'Plato de prueba',p:40};

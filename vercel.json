@@ -1,0 +1,11 @@
+{
+  "rewrites": [
+    { "source": "/pedidos", "destination": "/pedidos.html" },
+    { "source": "/cocina", "destination": "/cocina.html" },
+    { "source": "/operativo", "destination": "/operativo.html" }
+  ],
+  "headers": [
+    { "source": "/api/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] },
+    { "source": "/(pedidos|cocina|operativo)(.*)", "headers": [{ "key": "Referrer-Policy", "value": "no-referrer" }, { "key": "X-Content-Type-Options", "value": "nosniff" }, { "key": "X-Frame-Options", "value": "DENY" }] }
+  ]
+}

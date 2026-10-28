@@ -36,6 +36,12 @@
   function apply(current, command, now = new Date().toISOString()) {
     const s = structuredClone(current), p = command.payload || {}, id = text(command.id, 'Identificador');
     if (s.commands.some(c => c.id === id)) return { state: s, duplicate: true };
+    if(command.type==='purchaseReceived'){
+      const ordered=apply(s,{id:id+'/order',type:'order',payload:p},now).state;
+      const order=ordered.orders.find(o=>o.id===id+'/order');
+      const received=apply(ordered,{id:id+'/receipt',type:'receive',payload:{...p,orderId:order.id,lines:order.lines.map(l=>({lineId:l.id,quantity:l.quantity,unitCost:l.unitCost}))}},now).state;
+      received.commands.push({id,type:command.type,targetId:order.id,at:now});return {state:received,duplicate:false};
+    }
     globalThis.MisturaEdits.prepare(s);
     globalThis.MisturaRestaurant?.prepare(s,now);
     const key = suffix => id + suffix;
@@ -43,7 +49,7 @@
     const movement = (ingredient, quantity, kind, extra = {}) => {
       s.movements.push({ id: key('/' + s.movements.length), ingredientId: ingredient.id, quantity: round(quantity), unitCost: ingredient.cost, kind, date: day(), postedAt: now, ...extra });
     };
-    if (globalThis.MisturaService?.apply(s,command,now,{fail,text,num,find,date,unitQuantity,round}) || globalThis.MisturaPayables?.apply(s,command,now,{fail,text,num,find,date,unitQuantity,round}) || globalThis.MisturaRestaurant?.apply(s,command,now,{fail,text,num,find,date,unitQuantity,round}) || globalThis.MisturaEdits.apply(s, command, now, { fail, text, num, find, date, unitQuantity, round })) {
+    if (globalThis.MisturaManagement?.apply(s,command,now,{fail,text,num,find,date,unitQuantity,round}) || globalThis.MisturaService?.apply(s,command,now,{fail,text,num,find,date,unitQuantity,round}) || globalThis.MisturaPayables?.apply(s,command,now,{fail,text,num,find,date,unitQuantity,round}) || globalThis.MisturaRestaurant?.apply(s,command,now,{fail,text,num,find,date,unitQuantity,round}) || globalThis.MisturaEdits.apply(s, command, now, { fail, text, num, find, date, unitQuantity, round })) {
       // Edited and restored records are validated by the ledger replay below.
     } else if (command.type === 'supplier') {
       const name = text(p.name, 'Proveedor');

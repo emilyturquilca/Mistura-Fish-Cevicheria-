@@ -7,6 +7,12 @@ import '../operations-edit-core.js';
 import '../restaurant-core.js';
 import '../payables-core.js';
 import '../service-core.js';
+import { hash,testStorage } from '../lib/online-store.js';
+import * as webOrders from '../api/web-orders.js';
+import * as webKitchen from '../api/kitchen.js';
+import * as webAdmin from '../api/shop-admin.js';
+import * as webPayments from '../api/web-payments.js';
+import * as operational from '../api/operational.js';
 
 const root = new URL('../', import.meta.url);
 const today = globalThis.MisturaCore.dateKey();
@@ -17,6 +23,9 @@ const sale = (id, date, total, cost) => ({
 });
 const receipts = [sale('DEMO-1', '2026-10-12T01:00:00Z', 70, 30), sale('DEMO-2', '2026-10-12T17:00:00Z', 600, 200), sale('DEMO-HOY', today + 'T12:00:00-05:00', 40, 15)];
 let operationState = globalThis.MisturaOperations.initial(), operationVersion = 0;
+process.env.NODE_ENV='test';process.env.APP_PASSWORD='local-preview-only';
+delete process.env.MP_ACCESS_TOKEN;delete process.env.MP_PUBLIC_KEY;delete process.env.MP_WEBHOOK_SECRET;
+testStorage({load:async()=>({state:structuredClone(operationState),version:operationVersion}),save:async(next,expected)=>{if(expected!==operationVersion)return null;operationState=structuredClone(next);return ++operationVersion}});
 operationState.sales.prods.ceviche = { n: 'Ceviche de prueba', c: 'Prueba', p: 40, k: 15 };
 globalThis.MisturaCore.mergeReceipts(operationState.sales, receipts);
 operationState.sales.sync = new Date().toISOString();
@@ -32,10 +41,20 @@ if(process.argv.includes('--seed-operations')){
   seed('qa-recipe','recipe',{productKey:'ceviche',portions:1,lines:[{ingredientId:'qa-fish',quantity:200,unit:'g',yield:80}]});
   seed('qa-reservation','reservation',{name:'Mesa de prueba',phone:'',guests:4,plannedAt:today+'T13:00:00-05:00',status:'Pendiente',note:'',lines:[{productKey:'ceviche',quantity:4}]});
   seed('qa-order-later','order',{supplierId:'qa-supplier',date:today,reference:'QA-SEGUNDA-COMPRA',lines:[{ingredientId:'qa-fish',quantity:5,unit:'kg',unitCost:22}]});
+  operationState.sales.prods.ceviche.variantId='11111111-1111-4111-8111-111111111111';
+  operationState.sales.prods.ceviche.webVariants=[{id:'11111111-1111-4111-8111-111111111111',name:'Normal',price:40}];
+  operationState.webShop={enabled:true,allowCash:true,allowDelivery:true,deliveryFee:5,deliveryZone:'Zona de prueba',kitchenKeyHash:hash('kitchen-preview-only-12345678901234567890'),operatorKeyHash:hash('operator-preview-only-12345678901234567890'),items:[{id:'ceviche',productKey:'ceviche',variantId:'11111111-1111-4111-8111-111111111111',name:'Ceviche de prueba',category:'Ceviches',description:'Carta ficticia para revisar pedidos y cocina.',price:40,taxIds:[],published:true,available:true}]};
 }
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, 'http://localhost');
   response.setHeader('Cache-Control', 'no-store');
+  const onlineRoutes={'/api/web-orders':webOrders,'/api/kitchen':webKitchen,'/api/shop-admin':webAdmin,'/api/web-payments':webPayments,'/api/operational':operational};
+  if(onlineRoutes[url.pathname]){
+    let raw='';for await(const chunk of request)raw+=chunk;
+    const req=new Request('http://127.0.0.1:4173'+request.url,{method:request.method,headers:request.headers,...(raw?{body:raw}:{})});
+    const handler=onlineRoutes[url.pathname][request.method];const result=handler?await handler(req):new Response('',{status:405});
+    response.writeHead(result.status,Object.fromEntries(result.headers));response.end(await result.text());return;
+  }
   if(url.pathname==='/api/demo-sale' && request.method==='POST'){
     // Explicitly local synthetic receipt for end-to-end stock verification. Never deployed as an API.
     const now=new Date().toISOString(),id='DEMO-AUTO',posted=operationState.sales.v[id]?.f||now;
@@ -73,10 +92,12 @@ const server = createServer(async (request, response) => {
   }
   const files = { '/': 'index.html', '/dark': 'index.html', '/index.html': 'index.html', '/sales-core.js': 'sales-core.js', '/operations-core.js': 'operations-core.js', '/operations-edit-core.js':'operations-edit-core.js','/restaurant-core.js':'restaurant-core.js','/restaurant-ui.js':'restaurant-ui.js', '/payables-core.js':'payables-core.js', '/payables-ui.js':'payables-ui.js', '/operations-edit-ui.js':'operations-edit-ui.js', '/operations-ui.js': 'operations-ui.js', '/assets/xlsx.full.min.js': 'assets/xlsx.full.min.js' };
   Object.assign(files,{'/supplier-performance-ui.js':'supplier-performance-ui.js','/supplier-performance.css':'supplier-performance.css','/service-core.js':'service-core.js','/service-ui.js':'service-ui.js','/service.css':'service.css','/home-core.js':'home-core.js','/home-ui.js':'home-ui.js','/home.css':'home.css','/assets/mistura-logo.png':'assets/mistura-logo.png'});
+  Object.assign(files,{'/management-core.js':'management-core.js','/management-ui.js':'management-ui.js','/operativo':'operativo.html','/operativo.html':'operativo.html','/operativo.js':'operativo.js','/pedidos':'pedidos.html','/pedidos.html':'pedidos.html','/cocina':'cocina.html','/cocina.html':'cocina.html','/privacidad.html':'privacidad.html','/online.css':'online.css','/pedidos.js':'pedidos.js','/cocina.js':'cocina.js','/online-admin.js':'online-admin.js','/assets/qrcode.js':'assets/qrcode.js'});
   const file = files[url.pathname];
   if (!file) { response.writeHead(404); response.end(); return; }
   try {
     let content = await readFile(new URL(file, root));
+    if(['pedidos.html','cocina.html','operativo.html'].includes(file))content=content.toString().replace('<body>','<body><div style="padding:8px;background:#ffe1a8;color:#352300;text-align:center">PRUEBA LOCAL · Datos ficticios</div>');
     if (file === 'index.html') content = content.toString().replace('<title>', '<title>PRUEBA CON DATOS FICTICIOS · ').replace('iniciar();', "sessionStorage.setItem('mf_clave','local-preview-only');iniciar();").replace('<body>', '<body style="padding-top:28px"><div style="position:fixed;top:0;left:0;right:0;height:28px;z-index:100;background:#ffe1a8;color:#352300;text-align:center;padding:4px">PRUEBA LOCAL · Datos ficticios</div>');
     response.writeHead(200, { 'Content-Type': file.endsWith('.html') ? 'text/html; charset=utf-8' : file.endsWith('.css')?'text/css; charset=utf-8':file.endsWith('.png')?'image/png':'text/javascript; charset=utf-8' });
     response.end(content);

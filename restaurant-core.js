@@ -17,6 +17,7 @@
     const pending=[];
     for(const sale of Object.values(s.sales.v)){
       if(sale.type!=='SALE'||sale.source!=='api')continue;
+      if(!s.saleUsage[sale.id]&&(s.settings?.stockMode!=='recipes'||new Date(sale.f)<new Date(s.settings.recipeConsumptionFrom||s.autoStock.startAt)))continue;
       if(new Date(sale.f)<new Date(s.autoStock.startAt)){delete s.saleUsage[sale.id];continue}
       const products={};for(const line of sale.items||[])if(line.q>0)products[line.k]=(products[line.k]||0)+line.q;
       const usage={receiptId:sale.id,date:sale.f,store:sale.store||'',products:[],status:'sale'};

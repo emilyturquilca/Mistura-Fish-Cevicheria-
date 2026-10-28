@@ -5,11 +5,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="assets/xlsx.full.min.js"></script>
 <script src="sales-core.js?v=20261023-servicio"></script>
-<script src="operations-core.js?v=20261023-servicio"></script>
-<script src="operations-edit-core.js?v=20261023-servicio"></script>
-<script src="restaurant-core.js"></script>
+<script src="operations-core.js?v=20261027"></script>
+<script src="operations-edit-core.js?v=20261023-web"></script>
+<script src="restaurant-core.js?v=20261027"></script>
 <script src="payables-core.js"></script>
-<script src="service-core.js?v=20261023-servicio"></script>
+<script src="service-core.js?v=20261027"></script>
+<script src="management-core.js?v=20261027"></script>
 <script src="home-core.js?v=20261023-servicio"></script>
 <script src="operations-ui.js"></script>
 <script src="operations-edit-ui.js?v=20261023-servicio"></script>
@@ -17,7 +18,10 @@
 <script src="payables-ui.js"></script>
 <script src="supplier-performance-ui.js"></script>
 <script src="home-ui.js?v=20261023-servicio"></script>
-<script src="service-ui.js?v=20261023-servicio"></script>
+<script src="service-ui.js?v=20261023-web"></script>
+<script src="assets/qrcode.js"></script>
+<script src="online-admin.js?v=20261023-web"></script>
+<script src="management-ui.js?v=20261027"></script>
 <style>
 :root{--bg:#f3f8fa;--card:#fff;--ink:#0d2b3e;--mut:#5b7686;--line:#dbe8ee;--side:#0b2a40;--sea:#0e7c9b;--tq:#19b5b0;--warm:#f08a4b;--sand:#e8f4f6;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0a1b28;--card:#10293a;--ink:#e6f2f6;--mut:#8fb0bf;--line:#1d3d52;--sand:#14344a}}
@@ -99,7 +103,7 @@ async function sincronizar(forzar,desde){
   if(guardar())MSG=`Sincronizado: ${counts.added} recibos nuevos, ${counts.updated} actualizados y ${counts.cancelled} anulados retirados.`;
  }catch(e){if(e.message=='AUTH')return salir();MSG=/^Falta el token/.test(e.message)?(forzar||desde?'Falta conectar Loyverse: guarda el token en esta pantalla o sube un archivo de datos.':''):'No se pudo sincronizar ('+e.message+'). Mostrando datos guardados.'}
  finally{syncing=false;hidratar();if(clave())render()}}
-function login(){sessionStorage.removeItem(CL);localStorage.removeItem(CL);document.getElementById('app').innerHTML='<div class="card" style="max-width:320px;margin:60px auto"><img class="login-logo" src="assets/mistura-logo.png" width="150" height="150" alt="Mistura Fish Cevichería"><h2>Bienvenido a Mistura Fish</h2><p><input type="password" id="clv" placeholder="Contraseña" style="width:100%" onkeydown="if(event.key==\'Enter\')entrar()"></p><button class="btn" onclick="entrar()">Entrar</button><p class="na" id="lerr"></p></div>'}
+function login(){sessionStorage.removeItem(CL);localStorage.removeItem(CL);document.getElementById('app').innerHTML='<div class="card" style="max-width:320px;margin:60px auto"><img class="login-logo" src="assets/mistura-logo.png" width="150" height="150" alt="Mistura Fish Cevichería"><h2>Administración · Mistura Fish</h2><p><input type="password" id="clv" placeholder="Contraseña" style="width:100%" onkeydown="if(event.key==\'Enter\')entrar()"></p><button class="btn" onclick="entrar()">Entrar</button><p class="na" id="lerr"></p><p><a href="/operativo">Entrar al perfil operativo</a></p><p><a href="/cocina">Solo cocina</a></p></div>'}
 async function entrar(){sessionStorage.setItem(CL,document.getElementById('clv').value);
  try{await api('/ping');arrancar()}catch(e){sessionStorage.removeItem(CL);document.getElementById('lerr').textContent=e.message=='AUTH'?'Contraseña incorrecta':'No se pudo conectar: '+e.message}}
 function salir(){homeStopVoice();sessionStorage.removeItem(CL);localStorage.removeItem(CL);login()}
@@ -148,10 +152,12 @@ function sel(k){const interval=range(k);return VENTAS.filter(v=>Core.inRange(v,i
 function group(arr,keyFn,valFn){const m={};arr.forEach(x=>{const k=keyFn(x);m[k]=(m[k]||0)+valFn(x)});return m}
 function lines(vs){return vs.flatMap(v=>v.items.map(i=>({...i,pr:PROD[i.p],v})))}
 const P={k:'hoy',day:Core.dateKey(),metric:'net',from:Core.shiftDay(Core.dateKey(),-7),to:Core.dateKey()};
-let view='Inicio',charts=[],renderRevision=0,q='',fp='',openId=null,step=0,lastImport=null;
-const MENU=['Inicio','Inventario','Compras','Proveedores','Cuentas por pagar','Reservaciones','Mermas','Escandallos','Rentabilidad','Sincronizar Loyverse','Producción','Cocina / comandas','Personal','Clientes / fidelización','Pronóstico','Dashboard','Ventas','Ventas por hora','Productos','Reportes','Configuración'];
+let view='Dashboard',charts=[],renderRevision=0,q='',fp='',openId=null,step=0,lastImport=null;
+const MENU=['Inicio','Inventario','Compras','Proveedores','Cuentas por pagar','Reservaciones','Mermas','Escandallos','Rentabilidad','Sincronizar Loyverse','Producción','Cocina / comandas','Pedidos web','Personal','Clientes / fidelización','Pronóstico','Dashboard','Ventas','Ventas por hora','Productos','Reportes','Configuración'];
 function nav(){const n=document.getElementById('nav');n.querySelectorAll('button,.nav-label').forEach(b=>b.remove());
- MENU.forEach((m,i)=>{if(i==0||m==='Producción'||m==='Dashboard'){const label=document.createElement('div');label.className='nav-label';label.textContent=i==0?'MI RESTAURANTE':m==='Producción'?'SERVICIO Y EQUIPO':'CONSULTA Y REPORTES';n.appendChild(label)}const b=document.createElement('button');b.textContent=m;b.className=m==view?'on':'';b.onclick=()=>homeNavigate(m);n.appendChild(b)})}
+ const label=document.createElement('div');label.className='nav-label';label.textContent=managementWorkspace==='advanced'?'MÓDULOS AVANZADOS':'ADMINISTRACIÓN / DUEÑA';n.appendChild(label);
+ managementMenu().forEach(m=>{const b=document.createElement('button');b.textContent=m==='Compras'?'Compras y stock':m;b.className=m==view?'on':'';b.onclick=()=>homeNavigate(m);n.appendChild(b)});
+ if(OPS.state?.settings?.advancedEnabled){const b=document.createElement('button');b.textContent=managementWorkspace==='advanced'?'Volver a administración':'Abrir módulos avanzados';b.onclick=()=>managementSwitch(managementWorkspace==='advanced'?'admin':'advanced');n.appendChild(b)}}
 function elegirPeriodo(k){P.k=k;if(k=='hoy')P.day=Core.dateKey();render()}
 function elegirDia(day){if(!Core.dateKey(Core.dayStart(day))||day>Core.dateKey())return;P.day=day;P.k=day==Core.dateKey()?'hoy':'dia';render()}
 function moverDia(offset){elegirDia(Core.shiftDay(P.k=='hoy'?Core.dateKey():P.day,offset))}
@@ -222,7 +228,8 @@ Reportes(){const vs=sel(P.k);if(!vs.length)return '<h1>Reportes</h1>'+period()+n
  <p class="k">Los recibos anulados se retiran y las devoluciones se restan. Se actualizan también los recibos existentes. El beneficio bruto requiere costos en los recibos.</p><button class="pill" onclick="salir()">Cerrar sesión</button></div>`},
 Configuración(){return `<h1>Configuración</h1><p class="sub">Mistura Fish · alcance y conexiones</p><div class="grid g2"><div class="card"><h2>Primera versión</h2><p>Inventario → proveedores y compras → recetas y mermas → rentabilidad → Loyverse. Reservaciones con pedidos para planificar la preparación y las compras.</p><p>${OPS.configured?'Base PostgreSQL compartida conectada.':'Base compartida pendiente de conexión.'} ${serverConfigured?'Token de Loyverse configurado en el servidor.':''}</p><p class="k">Acceso con la contraseña del panel. Puedes editar registros y deshacer los borrados. El inventario se descuenta con las ventas según las recetas configuradas. El acceso sigue usando la contraseña compartida.</p></div>
  <div class="card"><h2>Segunda etapa · pendiente</h2><p>Producción → cocina/comandas → personal → clientes/fidelización → pronóstico.</p><p class="k">Estos módulos quedan para la siguiente etapa.</p></div><div class="card"><button class="pill" onclick="view='Papelera';render()">Recuperar registros eliminados</button><h2>Catálogo de Loyverse</h2><p>${CATS.map(c=>`<span class="tag">${esc(c)}</span> `).join('')}</p><h2>Métodos de pago</h2>${PAY.map(c=>`<span class="tag">${esc(c)}</span> `).join('')}</div></div>`}};
-Object.assign(V,OperationsViews,RestaurantViews,SupplierViews,SupplierPerformanceViews,HomeViews,ServiceViews);
+Object.assign(V,OperationsViews,RestaurantViews,SupplierViews,SupplierPerformanceViews,HomeViews,ServiceViews,OnlineViews);
+V.Compras=managementPurchases;V.Configuración=managementConfiguration;
 function ventasExportar(filtrar){return sel(P.k).filter(v=>!filtrar||((v.id+v.cli).toLowerCase().includes(q.toLowerCase())&&(!fp||v.pay==fp)))}
 function nombreReporte(extension){const[s,e]=range(P.k);return `ventas-${Core.dateKey(s)}-a-${Core.dateKey(new Date(e-1))}.${extension}`}
 function exportExcel(filtrar=false){
@@ -246,7 +253,7 @@ function exportExcel(filtrar=false){
 }
 function exportCSV(){const csv=Core.csv(Core.reportRows(ventasExportar(false))),a=document.createElement('a'),url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
  a.href=url;a.download=nombreReporte('csv');document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-function render(keep){opCapture();renderRevision++;charts.forEach(c=>c.destroy());charts=[];nav();const f=document.activeElement;const pos=f&&f.selectionStart;
+function render(keep){opCapture();managementGuard();renderRevision++;charts.forEach(c=>c.destroy());charts=[];nav();const f=document.activeElement;const pos=f&&f.selectionStart;
  document.getElementById('app').innerHTML='<div class="demo">'+esc(MSG||(DB.sync?'Última sincronización: '+new Date(DB.sync).toLocaleString('es-PE'):'Sin sincronizar'))+'</div>'+V[view]();
  opRestore();
  if(typeof opRenderEditor === 'function')opRenderEditor();
