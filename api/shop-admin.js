@@ -27,10 +27,11 @@ export async function POST(r){try{
     const [stores,types]=await Promise.all([pages('/stores','stores'),pages('/payment_types','payment_types')]);
     if(!stores.some(s=>s.id===p.storeId))fail('Elige una tienda válida.');
     const paymentTypes={};for(const method of ['Efectivo','Tarjeta','Yape']){const id=p.paymentTypes?.[method];if(!types.some(t=>t.id===id))fail('Elige el medio de pago de '+method+'.');paymentTypes[method]=id;}
+    const yapeIds=[...new Set([paymentTypes.Yape,p.yapeAlternateId].filter(Boolean))];if(yapeIds.some(id=>!types.some(t=>t.id===id)))fail('Elige un segundo medio Yape válido.');const yapePaymentTypes=yapeIds.map(id=>({id,name:types.find(t=>t.id===id).name}));
     if(p.deliveryVariantId&&!/^[a-f0-9-]{36}$/i.test(p.deliveryVariantId))fail('Revisa el artículo de delivery.');
-    await change(s=>{const delivery=p.deliveryVariantId?Object.values(s.sales.prods).find(x=>x.variantId===p.deliveryVariantId||x.webVariants?.some(v=>v.id===p.deliveryVariantId)):null;if(p.deliveryVariantId&&(!delivery||delivery.hasAddedTax))fail('Revisa el artículo y los impuestos del cargo de delivery.');s.webShop.loyverse={enabled:p.enabled===true,storeId:p.storeId,paymentTypes,deliveryVariantId:p.deliveryVariantId||'',deliveryTaxIds:delivery?.taxIds||[]};return true});return json({ok:true});
+    await change(s=>{const delivery=p.deliveryVariantId?Object.values(s.sales.prods).find(x=>x.variantId===p.deliveryVariantId||x.webVariants?.some(v=>v.id===p.deliveryVariantId)):null;if(p.deliveryVariantId&&(!delivery||delivery.hasAddedTax))fail('Revisa el artículo y los impuestos del cargo de delivery.');s.webShop.loyverse={enabled:p.enabled===true,storeId:p.storeId,paymentTypes,yapePaymentTypes,deliveryVariantId:p.deliveryVariantId||'',deliveryTaxIds:delivery?.taxIds||[]};return true});return json({ok:true});
   }
-  if(p.action==='sync-receipt'){await syncReceipt(p.id);return json({ok:true})}
+  if(p.action==='sync-receipt'){if(p.yapePaymentTypeId)await change(s=>{const o=s.onlineOrders.find(x=>x.id===p.id);if(!o||o.method!=='Yape'||o.payment.status!=='paid'||!s.webShop.loyverse?.yapePaymentTypes?.some(t=>t.id===p.yapePaymentTypeId))fail('Revisa el Yape donde recibiste el pago.');if(o.receiptSync.status!=='pending'&&o.yapePaymentTypeId!==p.yapePaymentTypeId)fail('No cambies el destino de una venta enviada o en revisión.');o.yapePaymentTypeId=p.yapePaymentTypeId;return true});await syncReceipt(p.id);return json({ok:true})}
   if(p.action==='refresh-payment'){
     const s=await state(),o=s.onlineOrders.find(x=>x.id===p.id);if(!o)fail('Pedido no encontrado.',404);
     const results=o.payment.id?[{id:o.payment.id}]:(await mp('/v1/payments/search?external_reference='+encodeURIComponent(o.id))).results||[];
