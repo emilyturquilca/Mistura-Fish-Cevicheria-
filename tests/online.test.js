@@ -106,3 +106,18 @@ test('Catalog refresh reads official tax_ids and variant_id fields without dropp
   globalThis.fetch=async url=>{if(String(url).includes('/items?'))return Response.json({items:[{id:'dish',tax_ids:['tax-test'],variants:[{variant_id:variant,option1_value:'Normal',default_price:20}]}]});if(String(url).endsWith('/taxes'))return Response.json({taxes:[{id:'tax-test',type:'INCLUDED'}]});throw Error('Unexpected external request')};
   try{const r=await admin.POST(req('/api/shop-admin',{headers:{'x-clave':process.env.APP_PASSWORD},body:{action:'refresh-catalog'}}));assert.equal(r.status,200);const p=get().sales.prods.dish;assert.equal(p.variantId,variant);assert.deepEqual(p.taxIds,['tax-test']);assert.equal(p.webVariants[0].name,'Normal');assert.equal(p.hasAddedTax,false)}finally{globalThis.fetch=original}
 });
+
+test('Two Yape destinations require choosing one and never create a receipt for both',async()=>{
+  for(const destination of ['yape-first','yape-second']){
+    env();const s=fixture(),o=create(s,{method:'Yape'});o.payment={status:'paid',paidAt:now};
+    s.webShop.loyverse.enabled=true;s.webShop.loyverse.yapePaymentTypes=[{id:'yape-first',name:'Yape1'},{id:'yape-second',name:'yape 2'}];
+    assert.throws(()=>receiptPayload(o,s.webShop.loyverse),/Selecciona Yape/);
+    let get=memory(s),posts=0,receipt=null;const original=globalThis.fetch;
+    globalThis.fetch=async(url,opts={})=>{if(opts.method==='POST'){posts++;const p=JSON.parse(opts.body);assert.equal(p.payments.length,1);assert.equal(p.payments[0].payment_type_id,destination);receipt={receipt_number:'SYNTHETIC-YAPE',receipt_type:'SALE',receipt_date:now,order:p.order,total_money:20,line_items:[],payments:[]};return Response.json(receipt)}return Response.json({receipts:receipt?[receipt]:[]})};
+    try{
+      await syncReceipt(o.id);assert.equal(posts,0);assert.equal(get().onlineOrders[0].payment.status,'paid');
+      s.onlineOrders[0].yapePaymentTypeId=destination;get=memory(s);
+      await syncReceipt(o.id);await syncReceipt(o.id);assert.equal(posts,1);assert.equal(get().onlineOrders[0].receiptSync.status,'synced');
+    }finally{globalThis.fetch=original}
+  }
+});

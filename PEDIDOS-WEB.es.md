@@ -45,3 +45,9 @@ Se conserva el consentimiento y su fecha. Los contactos y cumpleaños quedan dis
 ## Comprobaciones
 
 `node --test tests/*.test.js` incluye pruebas de separación de perfiles, pedidos repetidos, precios del servidor, firmas de notificaciones, cobros concurrentes y conciliación. `node tests/preview.mjs --seed-operations` permite probar el flujo completo con datos ficticios y pagos en línea desactivados. La revisión local usa los mismos controladores API, con almacenamiento de prueba explícito y sin operaciones en Neon, Loyverse o una pasarela real.
+
+## Carta externa y dos medios Yape
+
+La carta de https://pedidos-mistura-fish.vercel.app utiliza las APIs públicas de Reports y la misma base; su QR se genera también en /qr.html. El origen está autorizado explícitamente, sin acceso de administración.
+
+En Pagos y Loyverse se puede asociar un segundo medio Yape. Cada recibo conserva un solo tipo de pago. Cuando hay dos, administración elige dónde recibió el dinero al conciliar un pedido Yape pagado; el sistema no duplica la venta ni reparte el mismo importe entre ambas cuentas. Un pago confirmado por pasarela queda confirmado aunque falte esa selección, con el recibo pendiente. No se puede cambiar el destino de un recibo ya enviado o en revisión.
