@@ -1,7 +1,9 @@
+import { cors } from '../lib/public-cors.js';
+export { OPTIONS } from '../lib/public-cors.js';
 import { state,change,json,body,replyError,trackingOrder,mp,paymentsReady } from '../lib/online-store.js';
 import { fail,tracking,orderTicket } from '../lib/online-core.js';
 import { verifyPayment } from '../lib/online-payments.js';
-export async function POST(r){try{
+async function write(r){try{
   const p=await body(r);if(!paymentsReady())fail('La pasarela todavía no está conectada.',503);
   const s=await state(),o=trackingOrder(r,s);
   if(p.action==='refresh'){
@@ -31,3 +33,5 @@ export async function POST(r){try{
   }catch(e){await change(s=>{const order=s.onlineOrders.find(x=>x.id===o.id);if(order.payment.status==='submitting')order.payment.status='review';return true});throw e}
   const fresh=await state();return json(tracking(fresh,fresh.onlineOrders.find(x=>x.id===o.id)));
 }catch(e){return replyError(e)}}
+
+export const POST=cors(write);
