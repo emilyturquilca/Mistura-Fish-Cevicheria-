@@ -103,8 +103,8 @@ test('Settings publish only validated menu variants; receipt payload freezes pai
 });
 test('Catalog refresh reads official tax_ids and variant_id fields without dropping included taxes',async()=>{
   env();const get=memory(fixture()),original=globalThis.fetch;
-  globalThis.fetch=async url=>{if(String(url).includes('/items?'))return Response.json({items:[{id:'dish',tax_ids:['tax-test'],variants:[{variant_id:variant,option1_value:'Normal',default_price:20}]}]});if(String(url).endsWith('/taxes'))return Response.json({taxes:[{id:'tax-test',type:'INCLUDED'}]});throw Error('Unexpected external request')};
-  try{const r=await admin.POST(req('/api/shop-admin',{headers:{'x-clave':process.env.APP_PASSWORD},body:{action:'refresh-catalog'}}));assert.equal(r.status,200);const p=get().sales.prods.dish;assert.equal(p.variantId,variant);assert.deepEqual(p.taxIds,['tax-test']);assert.equal(p.webVariants[0].name,'Normal');assert.equal(p.hasAddedTax,false)}finally{globalThis.fetch=original}
+  globalThis.fetch=async url=>{if(String(url).includes('/items?'))return Response.json({items:[{id:'dish',image_url:'https://images.example.test/from-loyverse.jpg',tax_ids:['tax-test'],variants:[{variant_id:variant,option1_value:'Normal',default_price:20}]}]});if(String(url).endsWith('/taxes'))return Response.json({taxes:[{id:'tax-test',type:'INCLUDED'}]});throw Error('Unexpected external request')};
+  try{const r=await admin.POST(req('/api/shop-admin',{headers:{'x-clave':process.env.APP_PASSWORD},body:{action:'refresh-catalog'}}));assert.equal(r.status,200);const p=get().sales.prods.dish;assert.equal(p.variantId,variant);assert.equal(p.imageUrl,'https://images.example.test/from-loyverse.jpg');assert.deepEqual(p.taxIds,['tax-test']);assert.equal(p.webVariants[0].name,'Normal');assert.equal(p.hasAddedTax,false)}finally{globalThis.fetch=original}
 });
 
 test('Two Yape destinations require choosing one and never create a receipt for both',async()=>{
@@ -120,4 +120,22 @@ test('Two Yape destinations require choosing one and never create a receipt for 
       await syncReceipt(o.id);await syncReceipt(o.id);assert.equal(posts,1);assert.equal(get().onlineOrders[0].receiptSync.status,'synced');
     }finally{globalThis.fetch=original}
   }
+});
+
+
+test('Published photos follow the authoritative catalog without republishing and reject executable or credential URLs',()=>{
+  const s=fixture();s.sales.prods.dish.imageUrl='https://images.example.test/plato.jpg';
+  assert.equal(publicMenu(s).items[0].imageUrl,'https://images.example.test/plato.jpg');
+  const next=settings(s,{items:[{id:'dish',published:true,available:true,imageUrl:'https://wrong.example/photo.jpg'}]});
+  assert.equal(next.items[0].imageUrl,s.sales.prods.dish.imageUrl);
+  s.sales.prods.dish.imageUrl='https://images.example.test/actualizada.jpg';assert.match(publicMenu(s).items[0].imageUrl,/actualizada/);
+  for(const value of ['javascript:alert(1)','data:image/svg+xml,bad','http://images.example/a.jpg','https://user:secret@images.example/a.jpg','']){s.sales.prods.dish.imageUrl=value;assert.equal(publicMenu(s).items[0].imageUrl,'')}
+});
+
+test('An unpaid example can be archived and recovered without touching receipts; paid pending orders stay protected',async()=>{
+  env();const s=fixture(),o=create(s),get=memory(s);
+  let r=await admin.POST(req('/api/shop-admin',{headers:{'x-clave':process.env.APP_PASSWORD},body:{action:'archive',id:o.id,archived:true}}));
+  assert.equal(r.status,200);assert.equal(get().onlineOrders[0].archived,true);assert.equal(get().kitchenTickets[0].status,'Cancelada');assert.equal(get().onlineOrders[0].payment.status,'pending');assert.equal(get().onlineOrders[0].receiptSync.status,'pending');
+  r=await admin.POST(req('/api/shop-admin',{headers:{'x-clave':process.env.APP_PASSWORD},body:{action:'archive',id:o.id,archived:false}}));assert.equal(r.status,200);assert.equal(get().onlineOrders[0].archived,false);
+  const paid=fixture(),po=create(paid);po.payment={status:'paid',paidAt:now};memory(paid);r=await admin.POST(req('/api/shop-admin',{headers:{'x-clave':process.env.APP_PASSWORD},body:{action:'archive',id:po.id,archived:true}}));assert.equal(r.status,400);
 });
