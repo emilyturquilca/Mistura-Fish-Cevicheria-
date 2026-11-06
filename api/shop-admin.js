@@ -8,7 +8,7 @@ async function pages(path,key){const rows=[];let cursor;for(let i=0;i<30;i++){co
 export async function GET(r){try{
   admin(r);const action=new URL(r.url).searchParams.get('action');
   if(action==='loyverse-options'){const [stores,paymentTypes]=await Promise.all([pages('/stores','stores'),pages('/payment_types','payment_types')]);return json({stores:stores.map(s=>({id:s.id,name:s.name})),paymentTypes:paymentTypes.map(p=>({id:p.id,name:p.name}))})}
-  const s=await state();return json({shop:safeShop(s),paymentsReady:paymentsReady(),products:Object.entries(s.sales.prods).map(([id,p])=>({id,name:p.n,category:p.c,price:p.p,variantId:p.variantId||'',hasAddedTax:!!p.hasAddedTax,variants:p.webVariants||[]})),orders:[...s.onlineOrders].reverse().map(({accessHash,originHash,...o})=>({...o,status:orderTicket(s,o)?.status||'En revisión'}))});
+  const s=await state();return json({shop:safeShop(s),paymentsReady:paymentsReady(),products:Object.entries(s.sales.prods).map(([id,p])=>({id,name:p.n,category:p.c,price:p.p,variantId:p.variantId||'',hasAddedTax:!!p.hasAddedTax,variants:p.webVariants||[],imageUrl:p.imageUrl||''})),orders:[...s.onlineOrders].reverse().map(({accessHash,originHash,...o})=>({...o,status:orderTicket(s,o)?.status||'En revisión'}))});
 }catch(e){return replyError(e)}}
 export async function POST(r){try{
   admin(r);const p=await body(r);
@@ -21,7 +21,7 @@ export async function POST(r){try{
   }
   if(p.action==='refresh-catalog'){
     const [items,taxes]=await Promise.all([pages('/items','items'),pages('/taxes','taxes')]);
-    await change(s=>{for(const item of items){const previous=s.sales.prods[item.id];if(!previous)continue;const variant=item.variants?.[0],taxIds=(item.tax_ids||item.taxes||[]).map(t=>typeof t==='string'?t:t.id);Object.assign(previous,{p:variant?.default_price??previous.p,variantId:item.variants?.length===1?(variant.variant_id||variant.id):'',taxIds,webVariants:(item.variants||[]).map(v=>({id:v.variant_id||v.id,name:[v.option1_value,v.option2_value,v.option3_value].filter(Boolean).join(' / ')||v.variant_name||'Presentación',price:v.stores?.find(x=>x.store_id===s.webShop.loyverse?.storeId)?.price??v.default_price??0})),hasAddedTax:taxIds.some(id=>taxes.find(t=>t.id===id)?.type==='ADDED')})}return true});return json({ok:true});
+    await change(s=>{for(const item of items){const previous=s.sales.prods[item.id];if(!previous)continue;const variant=item.variants?.[0],taxIds=(item.tax_ids||item.taxes||[]).map(t=>typeof t==='string'?t:t.id);Object.assign(previous,{imageUrl:item.image_url||'',p:variant?.default_price??previous.p,variantId:item.variants?.length===1?(variant.variant_id||variant.id):'',taxIds,webVariants:(item.variants||[]).map(v=>({id:v.variant_id||v.id,name:[v.option1_value,v.option2_value,v.option3_value].filter(Boolean).join(' / ')||v.variant_name||'Presentación',price:v.stores?.find(x=>x.store_id===s.webShop.loyverse?.storeId)?.price??v.default_price??0})),hasAddedTax:taxIds.some(id=>taxes.find(t=>t.id===id)?.type==='ADDED')})}return true});return json({ok:true});
   }
   if(p.action==='loyverse-config'){
     const [stores,types]=await Promise.all([pages('/stores','stores'),pages('/payment_types','payment_types')]);
